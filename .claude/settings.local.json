@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/**)",
+      "Bash(pip install:*)",
+      "Bash(streamlit run:*)",
+      "Bash(timeout:*)",
+      "Bash(powershell -Command \"Add-Type -AssemblyName ''System.Data.OleDb''; $excel = New-Object -ComObject Excel.Application; $workbook = $excel.Workbooks.Open\\(\\(Get-Item ''945246_소진_내역_2025-11-01_2025-12-31.xlsx''\\).FullName\\); $worksheet = $workbook.ActiveSheet; $data = @\\(\\); for\\($i=1; $i -le [Math]::Min\\(5, $worksheet.UsedRange.Rows.Count\\); $i++\\) { $row = @\\(\\); for\\($j=1; $j -le $worksheet.UsedRange.Columns.Count; $j++\\) { $row += $worksheet.Cells.Item\\($i, $j\\).Value }; $data += @\\($row\\) }; $workbook.Close\\(\\); $excel.Quit\\(\\); $data | ForEach-Object { $_-join '','' }\")",
+      "Bash(python:*)",
+      "Bash(chcp 65001)",
+      "Bash(cd:*)",
+      "Bash(python3:*)",
+      "Bash(ping:*)",
+      "Bash(curl:*)",
+      "Bash(tasklist:*)",
+      "Bash(findstr:*)",
+      "Bash(start /B streamlit run:*)",
+      "Bash(chcp:*)"
+    ]
+  }
+}

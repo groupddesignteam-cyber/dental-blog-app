@@ -1,0 +1,36 @@
+=== 프로세서 결과 ===
+
+month: 2025-12
+prev_month: 2025-11
+
+KPI:
+  total_reservations: 96
+  cancel_rate: 25.0
+  completion_rate: 75.0
+  mom_growth: -14.29
+
+current_month_data:
+  total_reservations: 96
+  completed_count: 72
+  canceled_count: 24
+  cancel_rate: 25.0
+  completion_rate: 75.0
+
+prev_month_data:
+  total_reservations: 112
+  completed_count: 74
+  canceled_count: 38
+  cancel_rate: 33.93
+  completion_rate: 66.07
+
+월별 추이 (charts.monthly_trend):
+  {'year_month': '2025-10', 'total': 11, 'canceled': 5, 'completed': 6, 'cancel_rate': np.float64(45.45)}
+  {'year_month': '2025-11', 'total': 112, 'canceled': 38, 'completed': 74, 'cancel_rate': np.float64(33.93)}
+  {'year_month': '2025-12', 'total': 96, 'canceled': 24, 'completed': 72, 'cancel_rate': np.float64(25.0)}
+
+유입경로 TOP5:
+  {'inflow': '네이버 기타', 'count': 24}
+  {'inflow': '네이버 플레이스 - 검색 목록', 'count': 24}
+  {'inflow': '기타 (유입경로 구분 불가)', 'count': 17}
+  {'inflow': '네이버 플레이스 - 상세페이지', 'count': 10}
+  {'inflow': '네이버 플레이스 - 업체명 검색', 'count': 8}

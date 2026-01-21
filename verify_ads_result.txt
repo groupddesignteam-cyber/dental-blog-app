@@ -1,0 +1,24 @@
+=== 프로세서 결과 ===
+
+month: 2025-12
+prev_month: 2025-11
+
+KPI:
+  total_spend: 1127742.0
+  spend_mom_growth: 0.5630321340291129
+  total_impressions: 60778
+  total_clicks: 333
+  avg_ctr: 1.3595456928559015
+  impressions_mom_growth: 22.38824003221909
+
+월별 소진액 (tables.monthly_spend):
+  {'year_month': '2025-11', 'spend': 1121428.0, 'mom_growth': nan}
+  {'year_month': '2025-12', 'spend': 1127742.0, 'mom_growth': 0.5630321340291067}
+
+current_month_data:
+  total_spend: 1127742.0
+  campaign: {'top5_by_impressions': [{'keyword': '수원치과', 'impressions': 29004}, {'keyword': '치과', 'impressions': 3898}, {'keyword': '광교치과', 'impressions': 3313}, {'keyword': '수원임플란트', 'impressions': 3072}, {'keyword': '인계동치과', 'impressions': 2242}], 'top5_by_clicks': [{'keyword': '치과', 'clicks': 72}, {'keyword': '인계동치과', 'clicks': 49}, {'keyword': '수원치과', 'clicks': 42}, {'keyword': '광교치과', 'clicks': 14}, {'keyword': '수원시청역치과', 'clicks': 10}], 'top5_by_ctr': [{'keyword': '권선동틀니전문', 'ctr': 100.0}, {'keyword': '더S플란트치과진료시간', 'ctr': 100.0}, {'keyword': '더에스터플란트치과의원', 'ctr': 100.0}, {'keyword': '매탄동치과추천임플란트', 'ctr': 100.0}, {'keyword': '서울임플란트수술', 'ctr': 100.0}], 'total_impressions': 60778, 'total_clicks': 333, 'avg_ctr': 1.3595456928559015}
+
+prev_month_data:
+  total_spend: 1121428.0
+  campaign: {'top5_by_impressions': [{'keyword': '수원치과', 'impressions': 13883}, {'keyword': '치과', 'impressions': 6283}, {'keyword': '광교치과', 'impressions': 2885}, {'keyword': '인계동치과', 'impressions': 2380}, {'keyword': '수원임플란트', 'impressions': 2131}], 'top5_by_clicks': [{'keyword': '치과', 'clicks': 111}, {'keyword': '인계동치과', 'clicks': 33}, {'keyword': '수원치과', 'clicks': 27}, {'keyword': '광교치과', 'clicks': 8}, {'keyword': '수원임플란트', 'clicks': 8}], 'top5_by_ctr': [{'keyword': '수원***플란트치과', 'ctr': 100.0}, {'keyword': '수원더에스임플란트치과', 'ctr': 100.0}, {'keyword': '인계동임플란트저렴', 'ctr': 100.0}, {'keyword': '조홍재지', 'ctr': 100.0}, {'keyword': '더에스플란트치과수원', 'ctr': 66.66666666666666}], 'total_impressions': 49660, 'total_clicks': 285, 'avg_ctr': 0.8447103334178506}

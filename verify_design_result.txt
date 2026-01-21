@@ -1,0 +1,34 @@
+=== 프로세서 결과 ===
+
+month: 2025-12
+prev_month: 2025-11
+
+KPI:
+  completed_tasks: 2
+  mom_growth: 0.0
+  avg_revision: 1.5
+  heavy_revision_rate: 0.0
+
+current_month_data:
+  completed_tasks: 2
+  total_tasks: 2
+  avg_revision: 1.5
+  heavy_revision_rate: 0.0
+  total_pages: 2
+
+prev_month_data:
+  completed_tasks: 2
+  total_tasks: 2
+  avg_revision: 0.5
+  heavy_revision_rate: 0.0
+  total_pages: 2
+
+월별 추이 (charts.monthly_trend):
+  {'year_month': '2025-11', 'completed': 2, 'total': 2}
+  {'year_month': '2025-12', 'completed': 2, 'total': 2}
+
+clean_data (all_tasks):
+  {'year_month': '2025-12', 'status': '완료', 'is_completed': True, 'completed_pages': 1, 'revision_count': 2, 'clinic': '더에스플란트치과', 'task_name': '새해 인사 배너', 'category': '온라인 디자인'}
+  {'year_month': '2025-12', 'status': '완료', 'is_completed': True, 'completed_pages': 1, 'revision_count': 1, 'clinic': '더에스플란트치과', 'task_name': '구인공고 수정', 'category': '온라인 디자인 [수정]'}
+  {'year_month': '2025-11', 'status': '완료', 'is_completed': True, 'completed_pages': 1, 'revision_count': 1, 'clinic': '더에스플란트치과', 'task_name': '구인공고 디자인 및 모집분야 수정', 'category': '온라인 디자인'}
+  {'year_month': '2025-11', 'status': '완료', 'is_completed': True, 'completed_pages': 1, 'revision_count': 0, 'clinic': '더에스플란트치과', 'task_name': '11월 22일 학회 휴진', 'category': '온라인 디자인'}

@@ -1,0 +1,358 @@
+/* ============================================
+   Report v3 - Clean Light Theme Stylesheet
+   ============================================ */
+
+/* Import Google Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap');
+
+/* ============================================
+   CSS Variables - Design Tokens
+   ============================================ */
+:root {
+    /* Colors */
+    --bg-primary: #F8FAFC;
+    --bg-secondary: #FFFFFF;
+    --bg-tertiary: #F1F5F9;
+
+    /* Accent Colors */
+    --accent-primary: #3B82F6;
+    --accent-secondary: #60A5FA;
+    --accent-gradient: linear-gradient(135deg, #3B82F6 0%, #2563EB 100%);
+
+    /* Status Colors */
+    --color-success: #10B981;
+    --color-success-bg: #ECFDF5;
+    --color-danger: #EF4444;
+    --color-danger-bg: #FEF2F2;
+    --color-warning: #F59E0B;
+    --color-warning-bg: #FFFBEB;
+    --color-info: #3B82F6;
+    --color-info-bg: #EFF6FF;
+
+    /* Text Colors */
+    --text-primary: #1E293B;
+    --text-secondary: #64748B;
+    --text-muted: #94A3B8;
+
+    /* Border Colors */
+    --border-subtle: #E2E8F0;
+    --border-light: #CBD5E1;
+
+    /* Effects */
+    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+
+    /* Typography */
+    --font-sans: 'Inter', 'Noto Sans KR', -apple-system, BlinkMacSystemFont, sans-serif;
+
+    /* Spacing */
+    --radius-sm: 6px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+    --radius-xl: 16px;
+}
+
+/* ============================================
+   Global Styles
+   ============================================ */
+html,
+body,
+[class*="css"] {
+    font-family: var(--font-sans) !important;
+    color: var(--text-primary) !important;
+}
+
+.stApp {
+    background-color: var(--bg-primary) !important;
+}
+
+/* ============================================
+   Typography
+   ============================================ */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+    font-family: var(--font-sans) !important;
+    font-weight: 700 !important;
+    color: var(--text-primary) !important;
+    letter-spacing: -0.02em;
+}
+
+h1 {
+    font-size: 2rem !important;
+    color: var(--text-primary) !important;
+}
+
+p,
+span,
+div {
+    color: var(--text-secondary);
+}
+
+/* ============================================
+   Sidebar Styles
+   ============================================ */
+[data-testid="stSidebar"] {
+    background-color: var(--bg-secondary) !important;
+    border-right: 1px solid var(--border-subtle) !important;
+}
+
+[data-testid="stSidebar"] h1 {
+    color: var(--text-primary) !important;
+}
+
+/* ============================================
+   Cards & Metrics
+   ============================================ */
+[data-testid="stMetric"] {
+    background: var(--bg-secondary) !important;
+    border: 1px solid var(--border-subtle) !important;
+    border-radius: var(--radius-lg) !important;
+    padding: 1.25rem !important;
+    box-shadow: var(--shadow-sm) !important;
+    transition: all 0.2s ease !important;
+}
+
+[data-testid="stMetric"]:hover {
+    box-shadow: var(--shadow-md) !important;
+    transform: translateY(-2px) !important;
+}
+
+[data-testid="stMetricLabel"] {
+    font-size: 0.875rem !important;
+    font-weight: 500 !important;
+    color: var(--text-secondary) !important;
+}
+
+[data-testid="stMetricValue"] {
+    font-size: 1.5rem !important;
+    font-weight: 700 !important;
+    color: var(--text-primary) !important;
+}
+
+/* ============================================
+   Tab Styling
+   ============================================ */
+.stTabs [data-baseweb="tab-list"] {
+    gap: 8px !important;
+    background: transparent !important;
+    padding: 0 !important;
+    margin-bottom: 1.5rem !important;
+}
+
+.stTabs [data-baseweb="tab"] {
+    height: 40px !important;
+    padding: 0 16px !important;
+    background: var(--bg-secondary) !important;
+    border-radius: var(--radius-md) !important;
+    font-weight: 500 !important;
+    color: var(--text-secondary) !important;
+    border: 1px solid var(--border-subtle) !important;
+    transition: all 0.2s ease !important;
+}
+
+.stTabs [aria-selected="true"] {
+    background: var(--accent-primary) !important;
+    color: white !important;
+    border-color: var(--accent-primary) !important;
+}
+
+/* ============================================
+   File Uploader (Main Area)
+   ============================================ */
+[data-testid="stFileUploader"] {
+    background: var(--bg-secondary) !important;
+    border: 2px dashed var(--border-light) !important;
+    border-radius: var(--radius-xl) !important;
+    padding: 2rem !important;
+    text-align: center !important;
+    transition: all 0.2s ease !important;
+}
+
+[data-testid="stFileUploader"]:hover {
+    border-color: var(--accent-primary) !important;
+    background-color: var(--color-info-bg) !important;
+}
+
+/* ============================================
+   Buttons
+   ============================================ */
+.stButton>button {
+    background: var(--accent-primary) !important;
+    color: white !important;
+    border: none !important;
+    border-radius: var(--radius-md) !important;
+    padding: 0.625rem 1.25rem !important;
+    font-weight: 500 !important;
+    box-shadow: var(--shadow-sm) !important;
+    transition: all 0.2s ease !important;
+}
+
+.stButton>button:hover {
+    background: var(--accent-secondary) !important;
+    box-shadow: var(--shadow-md) !important;
+    transform: translateY(-1px) !important;
+}
+
+/* ============================================
+   Custom Comparison Layout
+   ============================================ */
+.comparison-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+    padding-bottom: 1rem;
+    border-bottom: 2px solid var(--accent-primary);
+}
+
+.comparison-header h2 {
+    font-size: 1.25rem;
+    color: var(--text-primary);
+    margin: 0;
+}
+
+.comparison-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2rem;
+    margin-bottom: 2rem;
+}
+
+.month-column {
+    background: var(--bg-secondary);
+    border-radius: var(--radius-lg);
+    padding: 1.5rem;
+    box-shadow: var(--shadow-sm);
+    border: 1px solid var(--border-subtle);
+}
+
+.month-title {
+    font-size: 1.125rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 1.5rem;
+    text-align: center;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+/* Metric Item in Grid */
+.metric-item {
+    display: flex;
+    align-items: center;
+    padding: 1rem;
+    background: var(--bg-primary);
+    border-radius: var(--radius-md);
+    margin-bottom: 0.75rem;
+}
+
+.metric-icon {
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    margin-right: 1rem;
+    font-size: 1.25rem;
+}
+
+.metric-icon.blue {
+    background: var(--color-info-bg);
+    color: var(--color-info);
+}
+
+.metric-icon.green {
+    background: var(--color-success-bg);
+    color: var(--color-success);
+}
+
+.metric-icon.red {
+    background: var(--color-danger-bg);
+    color: var(--color-danger);
+}
+
+.metric-content {
+    flex: 1;
+}
+
+.metric-label {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.25rem;
+}
+
+.metric-value {
+    font-size: 1.125rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.metric-unit {
+    font-size: 0.875rem;
+    font-weight: 400;
+    color: var(--text-muted);
+    margin-left: 0.25rem;
+}
+
+/* Upload Card Grid */
+.upload-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1.5rem;
+    margin-top: 2rem;
+}
+
+.upload-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    padding: 1.5rem;
+    text-align: center;
+    transition: all 0.2s ease;
+}
+
+.upload-card:hover {
+    border-color: var(--accent-primary);
+    box-shadow: var(--shadow-md);
+}
+
+.upload-icon {
+    font-size: 2rem;
+    margin-bottom: 1rem;
+    color: var(--accent-primary);
+}
+
+.upload-title {
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 0.5rem;
+}
+
+.upload-desc {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+}
+
+/* Chart Container */
+.chart-box {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    padding: 1.5rem;
+    box-shadow: var(--shadow-sm);
+    margin-bottom: 1.5rem;
+}
+
+/* Table Container */
+[data-testid="stDataFrame"] {
+    background: var(--bg-secondary) !important;
+    border: 1px solid var(--border-subtle) !important;
+    border-radius: var(--radius-lg) !important;
+}
