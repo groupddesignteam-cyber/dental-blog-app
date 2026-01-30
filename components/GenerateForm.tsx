@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { GenerateFormData, UploadedImage } from '@/types'
 
 interface Props {
@@ -28,6 +28,98 @@ const DEFAULT_TREATMENTS = [
   '치아미백',
   '소아치과',
 ]
+
+// 검색 가능한 Combobox 컴포넌트
+function SearchableSelect({
+  options,
+  value,
+  onChange,
+  placeholder,
+  required,
+  onCustomInput,
+}: {
+  options: string[]
+  value: string
+  onChange: (value: string) => void
+  placeholder: string
+  required?: boolean
+  onCustomInput?: () => void
+}) {
+  const [isOpen, setIsOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const wrapperRef = useRef<HTMLDivElement>(null)
+
+  const filteredOptions = options.filter((opt) =>
+    opt.toLowerCase().includes(search.toLowerCase())
+  )
+
+  // 외부 클릭 감지
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
+        setIsOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  return (
+    <div ref={wrapperRef} className="relative">
+      <input
+        type="text"
+        value={isOpen ? search : value}
+        onChange={(e) => {
+          setSearch(e.target.value)
+          if (!isOpen) setIsOpen(true)
+        }}
+        onFocus={() => {
+          setIsOpen(true)
+          setSearch(value)
+        }}
+        placeholder={placeholder}
+        required={required && !value}
+        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+      />
+      {isOpen && (
+        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+          {filteredOptions.length > 0 ? (
+            filteredOptions.map((opt) => (
+              <button
+                key={opt}
+                type="button"
+                onClick={() => {
+                  onChange(opt)
+                  setSearch('')
+                  setIsOpen(false)
+                }}
+                className={`w-full px-3 py-2 text-left hover:bg-primary-50 ${
+                  value === opt ? 'bg-primary-100 text-primary-700' : ''
+                }`}
+              >
+                {opt}
+              </button>
+            ))
+          ) : (
+            <div className="px-3 py-2 text-gray-500">검색 결과 없음</div>
+          )}
+          {onCustomInput && (
+            <button
+              type="button"
+              onClick={() => {
+                onCustomInput()
+                setIsOpen(false)
+              }}
+              className="w-full px-3 py-2 text-left text-primary-600 hover:bg-primary-50 border-t"
+            >
+              + 직접 입력하기
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
 
 export default function GenerateForm({ onSubmit, isLoading }: Props) {
   // 시트 데이터
@@ -83,44 +175,61 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
     setFormData((prev) => ({ ...prev, [name]: value }))
   }
 
+  // 이미지 파일 처리 함수
+  const processImageFile = useCallback((file: File) => {
+    return new Promise<UploadedImage>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = (event) => {
+        const url = event.target?.result as string
+        resolve({
+          name: file.name,
+          url,
+          file,
+        })
+      }
+      reader.onerror = reject
+      reader.readAsDataURL(file)
+    })
+  }, [])
+
   // 이미지 업로드 처리
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
     if (!files || files.length === 0) return
 
     // 이미지 파일만 필터링
-    const imageFiles = Array.from(files).filter(file => file.type.startsWith('image/'))
-    if (imageFiles.length === 0) return
+    const imageFiles = Array.from(files).filter(file =>
+      file.type.startsWith('image/') || file.name.toLowerCase().endsWith('.gif')
+    )
 
-    let loadedCount = 0
+    if (imageFiles.length === 0) {
+      alert('이미지 파일만 업로드 가능합니다.')
+      return
+    }
 
-    imageFiles.forEach((file) => {
-      const reader = new FileReader()
-      reader.onload = (event) => {
-        const url = event.target?.result as string
-        const newImage: UploadedImage = {
-          name: file.name,
-          url,
-          file,
-        }
+    try {
+      const newImages = await Promise.all(imageFiles.map(processImageFile))
+      setImages((prev) => [...prev, ...newImages])
+    } catch (error) {
+      console.error('이미지 업로드 오류:', error)
+      alert('이미지 업로드에 실패했습니다.')
+    }
 
-        // 각 이미지가 로드될 때마다 상태에 추가
-        setImages((prev) => [...prev, newImage])
-
-        loadedCount++
-        // 모든 파일 로드 완료 후 input 초기화
-        if (loadedCount === imageFiles.length && fileInputRef.current) {
-          fileInputRef.current.value = ''
-        }
-      }
-      reader.readAsDataURL(file)
-    })
-  }
+    // input 초기화
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }, [processImageFile])
 
   // 이미지 삭제
-  const removeImage = (index: number) => {
+  const removeImage = useCallback((index: number) => {
     setImages((prev) => prev.filter((_, i) => i !== index))
-  }
+  }, [])
+
+  // 파일 선택 버튼 클릭
+  const handleFileButtonClick = useCallback(() => {
+    fileInputRef.current?.click()
+  }, [])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -185,27 +294,14 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
 
             {!customClinicMode && sheetClinics.length > 0 ? (
               <>
-                <select
-                  name="clinicName"
+                <SearchableSelect
+                  options={sheetClinics}
                   value={formData.clinicName}
-                  onChange={handleChange}
-                  required={!customClinicMode}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
-                >
-                  <option value="">치과를 선택하세요</option>
-                  {sheetClinics.map((clinic) => (
-                    <option key={clinic} value={clinic}>
-                      {clinic}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  onClick={() => setCustomClinicMode(true)}
-                  className="mt-2 text-sm text-primary-600 hover:text-primary-700"
-                >
-                  + 새 치과 직접 입력
-                </button>
+                  onChange={(value) => setFormData((prev) => ({ ...prev, clinicName: value }))}
+                  placeholder="치과명 검색 또는 선택..."
+                  required
+                  onCustomInput={() => setCustomClinicMode(true)}
+                />
               </>
             ) : (
               <>
@@ -280,27 +376,14 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
 
             {!customTopicMode ? (
               <>
-                <select
-                  name="topic"
+                <SearchableSelect
+                  options={treatmentOptions}
                   value={formData.topic}
-                  onChange={handleChange}
-                  required={!customTopicMode}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
-                >
-                  <option value="">주제를 선택하세요</option>
-                  {treatmentOptions.map((treatment) => (
-                    <option key={treatment} value={treatment}>
-                      {treatment}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  onClick={() => setCustomTopicMode(true)}
-                  className="mt-2 text-sm text-primary-600 hover:text-primary-700"
-                >
-                  + 새 주제 직접 입력
-                </button>
+                  onChange={(value) => setFormData((prev) => ({ ...prev, topic: value }))}
+                  placeholder="주제/치료 검색 또는 선택..."
+                  required
+                  onCustomInput={() => setCustomTopicMode(true)}
+                />
               </>
             ) : (
               <>
@@ -384,45 +467,49 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
           <span className="text-primary-600">팁: 파일명에 before, after, 치료전, 치료후 등을 포함하면 더 정확하게 배치됩니다.</span>
         </p>
 
+        {/* 실제 파일 input - 화면에 보이게 변경 */}
         <input
           ref={fileInputRef}
           type="file"
-          accept="image/*"
+          accept="image/*,.gif"
           multiple
           onChange={handleImageUpload}
           className="hidden"
+          id="image-upload"
         />
 
-        <button
-          type="button"
-          onClick={() => fileInputRef.current?.click()}
-          className="w-full py-3 px-4 border-2 border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-primary-500 hover:text-primary-600 transition-colors"
+        <label
+          htmlFor="image-upload"
+          className="block w-full py-3 px-4 border-2 border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-primary-500 hover:text-primary-600 transition-colors cursor-pointer text-center"
         >
-          클릭하여 이미지 선택 (여러 장 가능, GIF 지원)
-        </button>
+          📁 클릭하여 이미지 선택 (여러 장 가능, GIF 지원)
+        </label>
 
         {/* 업로드된 이미지 미리보기 */}
         {images.length > 0 && (
-          <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3">
-            {images.map((img, index) => (
-              <div key={index} className="relative group">
-                <img
-                  src={img.url}
-                  alt={img.name}
-                  className="w-full h-24 object-cover rounded-lg border border-gray-200"
-                />
-                <div className="absolute inset-0 bg-black bg-opacity-50 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex items-center justify-center">
-                  <button
-                    type="button"
-                    onClick={() => removeImage(index)}
-                    className="text-white text-sm bg-red-500 px-2 py-1 rounded"
-                  >
-                    삭제
-                  </button>
+          <div className="mt-4">
+            <p className="text-sm text-gray-600 mb-2">업로드된 이미지: {images.length}개</p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {images.map((img, index) => (
+                <div key={`${img.name}-${index}`} className="relative group">
+                  <img
+                    src={img.url}
+                    alt={img.name}
+                    className="w-full h-24 object-cover rounded-lg border border-gray-200"
+                  />
+                  <div className="absolute inset-0 bg-black bg-opacity-50 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex items-center justify-center">
+                    <button
+                      type="button"
+                      onClick={() => removeImage(index)}
+                      className="text-white text-sm bg-red-500 px-2 py-1 rounded hover:bg-red-600"
+                    >
+                      삭제
+                    </button>
+                  </div>
+                  <p className="mt-1 text-xs text-gray-500 truncate" title={img.name}>{img.name}</p>
                 </div>
-                <p className="mt-1 text-xs text-gray-500 truncate">{img.name}</p>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         )}
       </div>
