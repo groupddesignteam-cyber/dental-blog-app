@@ -18,10 +18,10 @@ export default function DashboardPage() {
     setStreamContent('')
 
     try {
-      // 이미지에서 file 속성 제외 (JSON 직렬화 불가)
+      // 이미지는 파일명만 전송 (base64 URL은 너무 큼)
       const payload = {
         ...data,
-        images: data.images?.map(img => ({ name: img.name, url: img.url })),
+        images: data.images?.map(img => ({ name: img.name })),
       }
 
       const response = await fetch('/api/generate', {

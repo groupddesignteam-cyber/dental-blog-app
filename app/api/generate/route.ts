@@ -5,7 +5,7 @@ import { NextRequest } from 'next/server'
 import { GenerateFormData, LLMModel } from '@/types'
 
 // 데이터 파일들
-import { TERM_REPLACEMENTS, FORBIDDEN_WORDS, MEDICAL_FACTS, METAPHORS } from '@/data/knowledge'
+import { TERM_REPLACEMENTS, FORBIDDEN_WORDS, MEDICAL_FACTS, METAPHORS, getMetaphorText } from '@/data/knowledge'
 import { REQUIRED_DISCLAIMERS, getDisclaimer } from '@/data/medical-law'
 import { CONTENT_RULES, generateHashtags } from '@/data/seo'
 import { getSeasonHook } from '@/data/season'
@@ -15,8 +15,13 @@ import { generateMainKeyword, suggestSubKeywords } from '@/data/keywords'
 // RAG
 import { generateRAGContext } from '@/lib/sheets-rag'
 
-// 네이버 DataLab API
-import { analyzeDentalKeywordTrend, getMonthlyPopularKeywords } from '@/lib/naver-datalab'
+// 네이버 DataLab API (검색 트렌드 + 쇼핑 인사이트)
+import {
+  analyzeDentalKeywordTrend,
+  getMonthlyPopularKeywords,
+  analyzeKeywordsComprehensive,
+  KeywordAnalysisResult
+} from '@/lib/naver-datalab'
 
 // LLM 클라이언트 초기화
 const anthropic = new Anthropic({
@@ -49,43 +54,38 @@ ${FORBIDDEN_WORDS.join(', ')}
 ## 용어 치환 규칙
 ${Object.entries(TERM_REPLACEMENTS).map(([k, v]) => `- ${k} → ${v}`).join('\n')}
 
-## 글 구조 (${CONTENT_RULES.totalLength.min}~${CONTENT_RULES.totalLength.max}자)
+## 글 구조 (공백 제외 약 1,500자 = 공백 포함 약 1,700~1,900자)
+⚠️ 중요: 글자수를 반드시 준수하세요. 너무 길면 안 됩니다!
 
 ### 1. 제목 (25~35자)
-- 메인 키워드 앞쪽 배치
+- 치료 키워드 앞쪽 배치 (지역 키워드 없이)
 - 물음표(?) 사용 시 클릭률 상승
 
-### 2. 서문 패턴
-인사: ${INTRO_PATTERNS.greeting[0]}
-공감 훅 예시:
-${INTRO_PATTERNS.empathyHooks.map(h => `- ${h}`).join('\n')}
+### 2. 서문 (간결하게)
+- 인사 + 공감 훅 1~2문장
+- 오늘 주제 소개
 
 ### 3. Q&A 블록 (스마트블록용)
 Q. [검색 의도 반영 질문]?
-A. [핵심 답변 2~3문장, 메인키워드 포함]
+A. [핵심 답변 2~3문장]
 
-### 4. 본문 섹션 (2~3개)
-- 소제목에 이모지 활용 (✅🔹💚🔵)
-- 설명 3~4문단, 한 줄 40자 내외
-- 구어체 어미 사용
+### 4. 본문 섹션 (2개)
+- 소제목에 이모지 (✅🔹💚)
+- 각 섹션 2~3문단, 간결하게
 
-### 5. 마무리 패턴
-${CLOSING_PATTERNS.summary[0]}
-${CLOSING_PATTERNS.farewell[0]}
-
-### 6. 부작용 고지 (필수)
+### 5. 마무리 + 부작용 고지
 ${disclaimer}
 
-## ${topic} 작성 시 특화 포인트
-${topicPatterns.length > 0 ? topicPatterns.map(p => `- ${p}`).join('\n') : '- 정확한 정보 전달\n- 환자 공감 유도'}
+## 전문용어 설명 + 비유 패턴 (중요!)
+전문용어를 사용할 때는 반드시 아래 패턴을 따르세요:
+"[전문용어]란 [정확한 의학적 설명]이에요. 쉽게 말해 [일상적인 비유]와 비슷하다고 생각하시면 돼요."
 
-## 의학적 팩트
-${MEDICAL_FACTS[topic as keyof typeof MEDICAL_FACTS]
-  ? JSON.stringify(MEDICAL_FACTS[topic as keyof typeof MEDICAL_FACTS], null, 2)
-  : '해당 시술에 맞는 정확한 정보 제공'}
+예시:
+- "근관치료(신경치료)란 치아 내부의 감염된 신경조직을 제거하고 소독하는 치료예요. 쉽게 말해 썩은 과일 속을 깨끗이 파내는 것과 비슷해요."
+- "치조골(잇몸뼈)은 치아를 지지하는 턱뼈의 일부예요. 마치 집의 기초 공사처럼 치아가 단단히 서 있게 해줘요."
 
-## 비유 표현 (활용 가능)
-${METAPHORS[topic as keyof typeof METAPHORS] || '환자가 이해하기 쉬운 비유 사용'}
+## ${topic} 관련 정보
+${topicPatterns.length > 0 ? topicPatterns.map(p => `- ${p}`).join('\n') : ''}
 
 ## 출력 형식
 글 작성이 완료되면 아래 형식으로 출력하세요:
@@ -172,9 +172,19 @@ function buildUserPrompt(
 - 치료 내용: ${data.treatment}
 ${data.photoDescription ? `- 사진 설명: ${data.photoDescription}` : ''}
 
-## 키워드 전략
-- 메인 키워드: "${mainKeyword}" (5~7회 배치)
-- 서브 키워드: ${subKeywords.join(', ')}
+## 키워드 전략 (중요!)
+### 지역 키워드: "${data.region}"
+- 반드시 치과명과 함께만 사용 (예: "${data.region} ${data.clinicName}", "${data.region} 치과")
+- ❌ 절대 금지: "${data.region} ${data.topic}" 처럼 지역+치료를 직접 연결하지 마세요
+- ❌ 부자연스러운 예: "${data.region} 임플란트는 중요해요" (X)
+- ✅ 자연스러운 예: "${data.region} ${data.clinicName}에서 임플란트 치료를 받으세요" (O)
+
+### 치료 키워드: "${data.topic}"
+- 독립적으로 자연스럽게 5~7회 배치
+- 서브 키워드: ${subKeywords.join(', ')} (각 2~3회)
+
+### SEO 키워드 조합 (제목, 서문, 마무리에만 사용)
+- "${data.region} ${data.clinicName}" 형태로 3~4회 배치
 - 이번 달 인기 키워드: ${popularKeywords.join(', ')}
 - 추천 해시태그: ${hashtags.join(' ')}
 
@@ -192,22 +202,32 @@ ${trendAnalysis}
 
 ${imageSection}
 
-## 요청사항
-1. 1,800~2,200자 분량으로 작성
-2. 메인 키워드 5~7회, 서브 키워드 각 2~3회 자연스럽게 배치
-3. 구어체 어미 사용 (~인데요, ~거든요, ~하죠)
-4. 스마트블록용 Q&A 포함
-5. 해당 시술의 부작용 고지문 반드시 포함
-6. 위에서 제안한 해시태그 10개 사용
-${imageNames.length > 0 ? '7. 이미지 플레이스홀더를 적절한 위치에 배치 (예: [IMAGE_1], [IMAGE_2])' : ''}
+## 요청사항 (필수 준수!)
+1. **공백 제외 약 1,500자** (공백 포함 1,700~1,900자) - 초과 금지!
+2. 치료 키워드 4~6회, 서브 키워드 각 2회 자연스럽게 배치
+3. 지역 키워드는 반드시 치과명과 함께만 사용
+4. **전문용어 사용 시 반드시 "정확한 설명 + 쉬운 비유" 패턴 적용**
+5. 구어체 어미 (~인데요, ~거든요, ~하죠)
+6. Q&A 블록 포함 (스마트블록용)
+7. 부작용 고지문 포함
+8. 해시태그 10개 (중복 없이)
+${imageNames.length > 0 ? '9. 이미지 플레이스홀더 배치 ([IMAGE_1], [IMAGE_2])' : ''}
 
 글 작성을 시작해주세요.`
 }
 
-// Claude API 스트리밍
-async function* streamClaude(systemPrompt: string, userPrompt: string) {
+// ============================================================
+// LLM 스트리밍 함수 (비용 최적화 옵션 포함)
+// ============================================================
+
+// Claude API 스트리밍 (Sonnet / Haiku 선택)
+async function* streamClaude(systemPrompt: string, userPrompt: string, useHaiku: boolean = false) {
+  // 💰 Haiku = 빠름 + 저비용 (~10배 저렴), Sonnet = 고품질
+  const modelId = useHaiku ? 'claude-3-5-haiku-20241022' : 'claude-sonnet-4-20250514'
+  console.log(`[LLM] Using Claude model: ${modelId}`)
+
   const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-20250514',
+    model: modelId,
     max_tokens: 4096,
     system: systemPrompt,
     messages: [{ role: 'user', content: userPrompt }],
@@ -221,10 +241,14 @@ async function* streamClaude(systemPrompt: string, userPrompt: string) {
   }
 }
 
-// OpenAI API 스트리밍
-async function* streamOpenAI(systemPrompt: string, userPrompt: string) {
+// OpenAI API 스트리밍 (GPT-4o / GPT-4o-mini 선택)
+async function* streamOpenAI(systemPrompt: string, userPrompt: string, useMini: boolean = false) {
+  // 💰 GPT-4o-mini = 빠름 + 저비용 (~15배 저렴), GPT-4o = 고품질
+  const modelId = useMini ? 'gpt-4o-mini' : 'gpt-4o'
+  console.log(`[LLM] Using OpenAI model: ${modelId}`)
+
   const response = await openai.chat.completions.create({
-    model: 'gpt-4o',
+    model: modelId,
     max_tokens: 4096,
     messages: [
       { role: 'system', content: systemPrompt },
@@ -241,8 +265,10 @@ async function* streamOpenAI(systemPrompt: string, userPrompt: string) {
   }
 }
 
-// Gemini API 스트리밍
+// Gemini API 스트리밍 (무료 할당량 내 사용 가능)
 async function* streamGemini(systemPrompt: string, userPrompt: string) {
+  console.log(`[LLM] Using Gemini model: gemini-1.5-pro`)
+
   const model = genAI.getGenerativeModel({
     model: 'gemini-1.5-pro',
     systemInstruction: systemPrompt,
@@ -258,16 +284,21 @@ async function* streamGemini(systemPrompt: string, userPrompt: string) {
   }
 }
 
-// 모델별 스트리밍 선택
+// 모델별 스트리밍 선택 (저비용 옵션 지원)
 function getStreamGenerator(model: LLMModel, systemPrompt: string, userPrompt: string) {
   switch (model) {
+    case 'claude-haiku':
+      return streamClaude(systemPrompt, userPrompt, true) // 💰 저비용
+    case 'claude':
+      return streamClaude(systemPrompt, userPrompt, false)
+    case 'openai-mini':
+      return streamOpenAI(systemPrompt, userPrompt, true) // 💰 저비용
     case 'openai':
-      return streamOpenAI(systemPrompt, userPrompt)
+      return streamOpenAI(systemPrompt, userPrompt, false)
     case 'gemini':
       return streamGemini(systemPrompt, userPrompt)
-    case 'claude':
     default:
-      return streamClaude(systemPrompt, userPrompt)
+      return streamClaude(systemPrompt, userPrompt, true) // 기본값 = 저비용
   }
 }
 
@@ -275,42 +306,70 @@ export async function POST(request: NextRequest) {
   try {
     const data: GenerateFormData = await request.json()
 
-    // API 키 확인
-    const model = data.model || 'claude'
-    if (model === 'claude' && !process.env.ANTHROPIC_API_KEY) {
+    // API 키 확인 (저비용 모델 포함)
+    const model = data.model || 'claude-haiku' // 기본값 = 저비용 모델
+    const needsAnthropicKey = model === 'claude' || model === 'claude-haiku'
+    const needsOpenAIKey = model === 'openai' || model === 'openai-mini'
+
+    if (needsAnthropicKey && !process.env.ANTHROPIC_API_KEY) {
       return new Response(JSON.stringify({ error: 'Claude API 키가 설정되지 않았습니다.' }), { status: 400 })
     }
-    if (model === 'openai' && !process.env.OPENAI_API_KEY) {
+    if (needsOpenAIKey && !process.env.OPENAI_API_KEY) {
       return new Response(JSON.stringify({ error: 'OpenAI API 키가 설정되지 않았습니다.' }), { status: 400 })
     }
     if (model === 'gemini' && !process.env.GEMINI_API_KEY) {
       return new Response(JSON.stringify({ error: 'Gemini API 키가 설정되지 않았습니다.' }), { status: 400 })
     }
 
-    // 시즌 훅 가져오기
+    // ============================================================
+    // 🚀 최적화: 동기 작업 먼저 처리 (0ms)
+    // ============================================================
     const seasonHook = getSeasonHook(data.topic)
-
-    // 메인/서브 키워드 생성
     const mainKeyword = generateMainKeyword(data.region, data.topic)
     const subKeywords = suggestSubKeywords(data.topic)
-
-    // 월별 인기 키워드
     const popularKeywords = getMonthlyPopularKeywords()
 
-    // RAG 컨텍스트 (기존 글 참조)
-    let ragContext = ''
-    try {
-      ragContext = await generateRAGContext(data.topic)
-    } catch (e) {
-      ragContext = '[기존 글 DB 참조 불가]'
-    }
+    // ============================================================
+    // 🚀 최적화: 비동기 API 호출 병렬 처리 (기존 순차 3-4초 → 병렬 1-2초)
+    // ============================================================
+    const [ragResult, keywordResult] = await Promise.allSettled([
+      generateRAGContext(data.topic),
+      analyzeKeywordsComprehensive(data.topic),
+    ])
 
-    // 네이버 키워드 트렌드 분석
+    // RAG 결과 처리
+    const ragContext = ragResult.status === 'fulfilled'
+      ? ragResult.value
+      : '[기존 글 DB 참조 불가]'
+
+    // 키워드 분석 결과 처리
+    let keywordAnalysis: KeywordAnalysisResult | null = null
     let trendAnalysis = ''
-    try {
-      const { analysis } = await analyzeDentalKeywordTrend(data.topic)
-      trendAnalysis = analysis
-    } catch (e) {
+
+    if (keywordResult.status === 'fulfilled') {
+      keywordAnalysis = keywordResult.value
+      trendAnalysis = keywordAnalysis.searchTrend.analysis
+
+      if (keywordAnalysis.searchTrend.topKeyword) {
+        trendAnalysis += `\n\n### 🏆 1위 인기 키워드\n`
+        trendAnalysis += `**"${keywordAnalysis.searchTrend.topKeyword}"** `
+        trendAnalysis += keywordAnalysis.searchTrend.direction === 'up' ? '(📈 상승 중)' :
+                         keywordAnalysis.searchTrend.direction === 'down' ? '(📉 하락 중)' : '(➡️ 안정적)'
+        trendAnalysis += `\n\n**SEO 점수:** ${keywordAnalysis.seoScore}/100\n`
+      }
+
+      if (keywordAnalysis.recommendations.length > 0) {
+        trendAnalysis += `\n### 💡 키워드 전략 추천\n`
+        trendAnalysis += keywordAnalysis.recommendations.join('\n')
+      }
+
+      // 쇼핑 인사이트 추가 (해당되는 경우)
+      if (keywordAnalysis.shoppingTrend.available) {
+        trendAnalysis += `\n\n### 🛒 쇼핑 인사이트\n${keywordAnalysis.shoppingTrend.analysis}`
+      }
+    } else {
+      // Promise.allSettled에서 rejected된 경우
+      console.error('Keyword analysis error:', keywordResult.status === 'rejected' ? keywordResult.reason : 'unknown')
       trendAnalysis = '[키워드 트렌드 분석 불가]'
     }
 

@@ -22,13 +22,14 @@ export const TITLE_RULES = {
 
 // 본문 작성 규칙
 export const CONTENT_RULES = {
-  totalLength: { min: 1800, max: 2200 },
+  totalLength: { min: 1400, max: 1600 }, // 공백 제외 약 1500자
+  totalLengthWithSpaces: { min: 1700, max: 1900 }, // 공백 포함 시
   lineLength: 40, // 한 줄 40자 내외
   paragraphLines: { min: 3, max: 5 },
   keywordDensity: { min: 2, max: 3 }, // 퍼센트
-  mainKeywordCount: { min: 5, max: 7 },
+  mainKeywordCount: { min: 4, max: 6 }, // 글자수 감소에 맞춤
   subKeywordCount: { min: 2, max: 3 },
-  imageCount: { min: 3, max: 5 },
+  imageCount: { min: 2, max: 4 },
 }
 
 // 해시태그 규칙
@@ -82,19 +83,21 @@ export function generateHashtags(
   region: string,
   topic: string
 ): string[] {
-  const hashtags = [
-    `#${region}${topic}`,
-    `#${mainKeyword}`,
-    ...subKeywords.map(kw => `#${kw}`),
+  const rawHashtags = [
+    `#${topic.replace(/\s/g, '')}`,           // 치료명 (공백 제거)
+    ...subKeywords.map(kw => `#${kw.replace(/\s/g, '')}`),
     `#${region}치과`,
-    `#${region}`,
+    `#${region.replace(/\s/g, '')}`,
     '#치과',
     '#치아건강',
     '#구강건강',
+    '#치과치료',
+    '#치과상담',
   ]
 
-  // 10개로 제한
-  return hashtags.slice(0, 10)
+  // 중복 제거 후 10개로 제한
+  const uniqueHashtags = [...new Set(rawHashtags)]
+  return uniqueHashtags.slice(0, 10)
 }
 
 // 키워드 밀도 계산 함수

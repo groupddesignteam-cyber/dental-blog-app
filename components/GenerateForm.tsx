@@ -9,9 +9,13 @@ interface Props {
 }
 
 const LLM_MODELS = [
-  { id: 'claude', name: 'Claude (Anthropic)', description: '추천 - 한국어 글쓰기 우수' },
-  { id: 'openai', name: 'GPT-4o (OpenAI)', description: '범용성 높음' },
-  { id: 'gemini', name: 'Gemini (Google)', description: '빠른 응답' },
+  // 💰 저비용 모델 (권장)
+  { id: 'claude-haiku', name: 'Claude Haiku 💰', description: '빠름 + 저비용 (추천)' },
+  { id: 'openai-mini', name: 'GPT-4o-mini 💰', description: '빠름 + 저비용' },
+  { id: 'gemini', name: 'Gemini Pro', description: '무료 + 빠른 응답' },
+  // 🎯 고품질 모델
+  { id: 'claude', name: 'Claude Sonnet', description: '고품질 한국어 글쓰기' },
+  { id: 'openai', name: 'GPT-4o', description: '고품질 + 높은 비용' },
 ] as const
 
 // 기본 치료 목록 (시트에서 못 가져올 경우)

@@ -1,4 +1,5 @@
 // 네이버 데이터랩 API 연동
+import { withCache, CACHE_TTL, cache } from './cache'
 
 export interface KeywordTrend {
   period: string
@@ -164,4 +165,211 @@ export function getMonthlyPopularKeywords(): string[] {
   }
 
   return seasonalKeywords[month] || ['치과', '치아관리', '스케일링']
+}
+
+// ============================================================
+// 네이버 쇼핑인사이트 API (카테고리별 클릭 트렌드)
+// ============================================================
+
+export interface ShoppingCategory {
+  name: string
+  param: string[] // 네이버 쇼핑 카테고리 ID
+}
+
+export interface ShoppingTrendResponse {
+  startDate: string
+  endDate: string
+  timeUnit: string
+  results: Array<{
+    title: string
+    category: string[]
+    data: Array<{
+      period: string
+      ratio: number
+    }>
+  }>
+}
+
+// 치과 관련 쇼핑 카테고리 매핑
+const DENTAL_SHOPPING_CATEGORIES: Record<string, ShoppingCategory> = {
+  '치아미백': { name: '치아미백', param: ['50000008'] }, // 뷰티 > 구강용품
+  '전동칫솔': { name: '전동칫솔', param: ['50000804'] },
+  '치실': { name: '치실/치간칫솔', param: ['50000805'] },
+  '구강용품': { name: '구강용품', param: ['50000008'] },
+}
+
+// 쇼핑인사이트 카테고리 트렌드 조회
+export async function getShoppingCategoryTrend(
+  categories: ShoppingCategory[],
+  startDate?: string,
+  endDate?: string
+): Promise<ShoppingTrendResponse | null> {
+  const clientId = process.env.NAVER_CLIENT_ID
+  const clientSecret = process.env.NAVER_CLIENT_SECRET
+
+  if (!clientId || !clientSecret) {
+    return null
+  }
+
+  const end = endDate || new Date().toISOString().split('T')[0]
+  const start = startDate || new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+
+  try {
+    const response = await fetch('https://openapi.naver.com/v1/datalab/shopping/categories', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Naver-Client-Id': clientId,
+        'X-Naver-Client-Secret': clientSecret,
+      },
+      body: JSON.stringify({
+        startDate: start,
+        endDate: end,
+        timeUnit: 'month',
+        category: categories,
+      }),
+    })
+
+    if (!response.ok) {
+      console.error('Shopping Insight API error:', response.status)
+      return null
+    }
+
+    return await response.json()
+  } catch (error) {
+    console.error('Failed to fetch Shopping Insight:', error)
+    return null
+  }
+}
+
+// ============================================================
+// 트렌드 기반 1위 키워드 추출
+// ============================================================
+
+export interface TopKeywordResult {
+  topKeyword: string
+  trendDirection: 'up' | 'down' | 'stable'
+  changePercent: number
+  relatedKeywords: string[]
+}
+
+// 검색 트렌드에서 1위 키워드 추출
+export function extractTopKeyword(trendData: DataLabResponse | null): TopKeywordResult | null {
+  if (!trendData || !trendData.results || trendData.results.length === 0) {
+    return null
+  }
+
+  // 가장 최근 데이터 기준으로 1위 키워드 찾기
+  let topResult = trendData.results[0]
+  let maxRatio = 0
+
+  for (const result of trendData.results) {
+    const latestData = result.data[result.data.length - 1]
+    if (latestData && latestData.ratio > maxRatio) {
+      maxRatio = latestData.ratio
+      topResult = result
+    }
+  }
+
+  // 트렌드 방향 계산
+  const data = topResult.data
+  const latest = data[data.length - 1]?.ratio || 0
+  const previous = data[data.length - 2]?.ratio || 0
+  const change = latest - previous
+  const changePercent = previous > 0 ? (change / previous) * 100 : 0
+
+  let trendDirection: 'up' | 'down' | 'stable' = 'stable'
+  if (change > 5) trendDirection = 'up'
+  else if (change < -5) trendDirection = 'down'
+
+  return {
+    topKeyword: topResult.title,
+    trendDirection,
+    changePercent: Math.round(changePercent * 10) / 10,
+    relatedKeywords: topResult.keywords,
+  }
+}
+
+// ============================================================
+// 통합 키워드 분석 (검색 트렌드 + 쇼핑 인사이트)
+// ============================================================
+
+export interface KeywordAnalysisResult {
+  searchTrend: {
+    topKeyword: string | null
+    direction: string
+    analysis: string
+  }
+  shoppingTrend: {
+    available: boolean
+    analysis: string
+  }
+  recommendations: string[]
+  seoScore: number // 0-100
+}
+
+export async function analyzeKeywordsComprehensive(topic: string): Promise<KeywordAnalysisResult> {
+  // 🚀 캐싱: 동일 토픽은 30분간 캐시 (API 호출 절약)
+  const cacheKey = `keyword-analysis:${topic}`
+  const cached = cache.get<KeywordAnalysisResult>(cacheKey)
+  if (cached) {
+    console.log(`[Cache HIT] Keyword analysis for "${topic}"`)
+    return cached
+  }
+
+  // 1. 검색어 트렌드 분석
+  const { trend: searchTrend, analysis: searchAnalysis } = await analyzeDentalKeywordTrend(topic)
+  const topKeyword = extractTopKeyword(searchTrend)
+
+  // 2. 쇼핑 인사이트 (관련 카테고리가 있는 경우)
+  let shoppingAnalysis = '[치과 시술은 쇼핑인사이트 대상 아님]'
+  const relatedCategory = DENTAL_SHOPPING_CATEGORIES[topic]
+
+  if (relatedCategory) {
+    const shoppingTrend = await getShoppingCategoryTrend([relatedCategory])
+    if (shoppingTrend && shoppingTrend.results.length > 0) {
+      const result = shoppingTrend.results[0]
+      const latestRatio = result.data[result.data.length - 1]?.ratio || 0
+      shoppingAnalysis = `**${relatedCategory.name} 쇼핑 트렌드:** 관심도 ${latestRatio.toFixed(0)}점`
+    }
+  }
+
+  // 3. SEO 점수 계산 (트렌드 기반)
+  let seoScore = 70 // 기본 점수
+  if (topKeyword) {
+    if (topKeyword.trendDirection === 'up') seoScore += 20
+    else if (topKeyword.trendDirection === 'down') seoScore -= 10
+    if (topKeyword.changePercent > 10) seoScore += 10
+  }
+  seoScore = Math.min(100, Math.max(0, seoScore))
+
+  // 4. 키워드 추천 생성
+  const recommendations: string[] = []
+  if (topKeyword) {
+    recommendations.push(`🔥 인기 키워드: "${topKeyword.topKeyword}" 활용 권장`)
+    if (topKeyword.trendDirection === 'up') {
+      recommendations.push(`📈 상승 트렌드 - 제목에 배치 시 노출 증가 예상`)
+    }
+    recommendations.push(...topKeyword.relatedKeywords.slice(0, 2).map(k => `💡 연관 키워드: "${k}"`))
+  }
+
+  const result: KeywordAnalysisResult = {
+    searchTrend: {
+      topKeyword: topKeyword?.topKeyword || null,
+      direction: topKeyword?.trendDirection || 'stable',
+      analysis: searchAnalysis,
+    },
+    shoppingTrend: {
+      available: !!relatedCategory,
+      analysis: shoppingAnalysis,
+    },
+    recommendations,
+    seoScore,
+  }
+
+  // 🚀 캐시 저장 (30분)
+  cache.set(cacheKey, result, CACHE_TTL.KEYWORD)
+  console.log(`[Cache SET] Keyword analysis for "${topic}"`)
+
+  return result
 }

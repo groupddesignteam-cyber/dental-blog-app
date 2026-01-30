@@ -6,7 +6,13 @@ export interface Clinic {
   createdAt: string
 }
 
-export type LLMModel = 'claude' | 'openai' | 'gemini'
+// LLM 모델 (고성능 + 저비용 옵션)
+export type LLMModel =
+  | 'claude'        // Claude Sonnet (고품질, 중간 비용)
+  | 'claude-haiku'  // Claude Haiku (빠름, 저비용) 💰
+  | 'openai'        // GPT-4o (고품질, 높은 비용)
+  | 'openai-mini'   // GPT-4o-mini (빠름, 저비용) 💰
+  | 'gemini'        // Gemini Pro (고품질, 무료/저비용)
 
 export interface UploadedImage {
   name: string
