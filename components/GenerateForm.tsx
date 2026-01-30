@@ -86,35 +86,35 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
   // 이미지 업로드 처리
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
-    if (!files) return
+    if (!files || files.length === 0) return
 
-    const newImages: UploadedImage[] = []
+    // 이미지 파일만 필터링
+    const imageFiles = Array.from(files).filter(file => file.type.startsWith('image/'))
+    if (imageFiles.length === 0) return
 
-    Array.from(files).forEach((file) => {
-      // 이미지 파일만 허용 (GIF 포함)
-      if (!file.type.startsWith('image/')) return
+    let loadedCount = 0
 
+    imageFiles.forEach((file) => {
       const reader = new FileReader()
       reader.onload = (event) => {
         const url = event.target?.result as string
-        newImages.push({
+        const newImage: UploadedImage = {
           name: file.name,
           url,
           file,
-        })
+        }
 
-        // 모든 파일 처리 완료 후 상태 업데이트
-        if (newImages.length === files.length) {
-          setImages((prev) => [...prev, ...newImages])
+        // 각 이미지가 로드될 때마다 상태에 추가
+        setImages((prev) => [...prev, newImage])
+
+        loadedCount++
+        // 모든 파일 로드 완료 후 input 초기화
+        if (loadedCount === imageFiles.length && fileInputRef.current) {
+          fileInputRef.current.value = ''
         }
       }
       reader.readAsDataURL(file)
     })
-
-    // input 초기화
-    if (fileInputRef.current) {
-      fileInputRef.current.value = ''
-    }
   }
 
   // 이미지 삭제
