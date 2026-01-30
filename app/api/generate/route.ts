@@ -12,8 +12,8 @@ import { getSeasonHook } from '@/data/season'
 import { INTRO_PATTERNS, BODY_PATTERNS, CLOSING_PATTERNS, TOPIC_PATTERNS } from '@/data/patterns'
 import { generateMainKeyword, suggestSubKeywords } from '@/data/keywords'
 
-// RAG
-import { generateRAGContext } from '@/lib/sheets-rag'
+// RAG + 치과별 페르소나
+import { generateRAGContext, extractClinicPersona, generatePersonaPrompt, ClinicPersona } from '@/lib/sheets-rag'
 
 // 네이버 DataLab API (검색 트렌드 + 쇼핑 인사이트)
 import {
@@ -35,18 +35,23 @@ const openai = new OpenAI({
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '')
 
 // 통합 시스템 프롬프트 생성
-function buildSystemPrompt(topic: string): string {
+function buildSystemPrompt(topic: string, persona?: ClinicPersona | null): string {
   const topicPatterns = TOPIC_PATTERNS[topic] || []
   const disclaimer = getDisclaimer(topic)
+
+  // 치과별 페르소나가 있으면 해당 스타일 사용
+  const personaSection = persona
+    ? generatePersonaPrompt(persona)
+    : `## 페르소나
+10년 차 치과 상담 실장
+- 전문 용어를 쓰되, 환자가 겁먹지 않게 다정하게 설명
+- 구어체 어미 필수: ~인데요, ~거든요, ~하죠, ~해요, ~드려요
+- '습니다/합니다'는 50% 이하로 최소화`
 
   return `당신은 치과 마케팅 전문 블로그 작성 AI입니다.
 의료광고법 100% 준수 + 네이버 SEO 최적화 + 검증된 글쓰기 패턴을 적용합니다.
 
-## 페르소나
-10년 차 치과 상담 실장
-- 전문 용어를 쓰되, 환자가 겁먹지 않게 다정하게 설명
-- 구어체 어미 필수: ~인데요, ~거든요, ~하죠, ~해요, ~드려요
-- '습니다/합니다'는 50% 이하로 최소화
+${personaSection}
 
 ## 절대 금지 표현 (의료광고법 위반)
 ${FORBIDDEN_WORDS.join(', ')}
@@ -157,9 +162,15 @@ function buildUserPrompt(
   ragContext: string,
   trendAnalysis: string,
   popularKeywords: string[],
-  imageNames: string[]
+  imageNames: string[],
+  selectedKeywords?: string[]
 ): string {
   const imageSection = analyzeImageNames(imageNames)
+
+  // 사용자가 선택한 키워드가 있으면 우선 적용
+  const keywordsToUse = selectedKeywords && selectedKeywords.length > 0
+    ? selectedKeywords
+    : [...subKeywords]
 
   return `다음 정보를 바탕으로 치과 블로그 글을 작성해주세요.
 
@@ -181,7 +192,8 @@ ${data.photoDescription ? `- 사진 설명: ${data.photoDescription}` : ''}
 
 ### 치료 키워드: "${data.topic}"
 - 독립적으로 자연스럽게 5~7회 배치
-- 서브 키워드: ${subKeywords.join(', ')} (각 2~3회)
+- 서브 키워드: ${keywordsToUse.join(', ')} (각 2~3회)
+${selectedKeywords && selectedKeywords.length > 0 ? `- ⭐ 사용자 선택 키워드 (우선 반영): ${selectedKeywords.join(', ')}` : ''}
 
 ### SEO 키워드 조합 (제목, 서문, 마무리에만 사용)
 - "${data.region} ${data.clinicName}" 형태로 3~4회 배치
@@ -332,15 +344,26 @@ export async function POST(request: NextRequest) {
     // ============================================================
     // 🚀 최적화: 비동기 API 호출 병렬 처리 (기존 순차 3-4초 → 병렬 1-2초)
     // ============================================================
-    const [ragResult, keywordResult] = await Promise.allSettled([
+    const [ragResult, keywordResult, personaResult] = await Promise.allSettled([
       generateRAGContext(data.topic),
       analyzeKeywordsComprehensive(data.topic),
+      // 치과별 페르소나 추출 (usePersona가 true이거나 기본적으로 항상 시도)
+      data.clinicName ? extractClinicPersona(data.clinicName, data.topic) : Promise.resolve(null),
     ])
 
     // RAG 결과 처리
     const ragContext = ragResult.status === 'fulfilled'
       ? ragResult.value
       : '[기존 글 DB 참조 불가]'
+
+    // 치과별 페르소나 처리
+    let clinicPersona: ClinicPersona | null = null
+    if (personaResult.status === 'fulfilled' && personaResult.value) {
+      clinicPersona = personaResult.value
+      console.log(`[Persona] ${data.clinicName}의 "${data.topic}" 스타일 발견 (${clinicPersona.postCount}개 글 분석)`)
+    } else {
+      console.log(`[Persona] ${data.clinicName}의 기존 글 없음 - 기본 스타일 사용`)
+    }
 
     // 키워드 분석 결과 처리
     let keywordAnalysis: KeywordAnalysisResult | null = null
@@ -379,9 +402,13 @@ export async function POST(request: NextRequest) {
     // 이미지 파일명 추출
     const imageNames = data.images?.map(img => img.name) || []
 
-    // 프롬프트 빌드
-    const systemPrompt = buildSystemPrompt(data.topic)
-    const userPrompt = buildUserPrompt(data, mainKeyword, subKeywords, hashtags, seasonHook, ragContext, trendAnalysis, popularKeywords, imageNames)
+    // 프롬프트 빌드 (치과별 페르소나 적용)
+    const systemPrompt = buildSystemPrompt(data.topic, clinicPersona)
+    const userPrompt = buildUserPrompt(
+      data, mainKeyword, subKeywords, hashtags, seasonHook,
+      ragContext, trendAnalysis, popularKeywords, imageNames,
+      data.selectedKeywords // 사용자 선택 키워드
+    )
 
     // 스트리밍 응답 생성
     const encoder = new TextEncoder()

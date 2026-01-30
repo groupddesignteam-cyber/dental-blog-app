@@ -31,6 +31,27 @@ export interface GenerateFormData {
   photoDescription?: string
   model: LLMModel
   images?: UploadedImage[]
+  // 키워드 분석 후 선택된 키워드
+  selectedKeywords?: string[]
+  // 치과별 페르소나 사용 여부
+  usePersona?: boolean
+}
+
+// 키워드 분석 결과 타입 (클라이언트용)
+export interface KeywordAnalysisState {
+  isAnalyzed: boolean
+  isAnalyzing: boolean
+  recommendedKeywords: {
+    main: string[]
+    sub: string[]
+    seasonal: string[]
+    trending: string[]
+  }
+  selectedKeywords: string[]
+  seoRecommendations: string[]
+  seoScore: number | null
+  hasPersona: boolean
+  personaPostCount: number
 }
 
 export interface Post {

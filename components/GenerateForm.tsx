@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { GenerateFormData, UploadedImage } from '@/types'
+import { GenerateFormData, UploadedImage, KeywordAnalysisState } from '@/types'
 
 interface Props {
   onSubmit: (data: GenerateFormData) => void
@@ -124,6 +124,45 @@ function SearchableSelect({
   )
 }
 
+// 키워드 버튼 컴포넌트
+function KeywordButton({
+  keyword,
+  isSelected,
+  onClick,
+  variant = 'default',
+}: {
+  keyword: string
+  isSelected: boolean
+  onClick: () => void
+  variant?: 'default' | 'trending' | 'seasonal'
+}) {
+  const baseClass = 'px-3 py-1.5 rounded-full text-sm font-medium transition-all border'
+  const variants = {
+    default: isSelected
+      ? 'bg-primary-500 text-white border-primary-500'
+      : 'bg-white text-gray-700 border-gray-300 hover:border-primary-400 hover:text-primary-600',
+    trending: isSelected
+      ? 'bg-red-500 text-white border-red-500'
+      : 'bg-red-50 text-red-700 border-red-200 hover:border-red-400',
+    seasonal: isSelected
+      ? 'bg-orange-500 text-white border-orange-500'
+      : 'bg-orange-50 text-orange-700 border-orange-200 hover:border-orange-400',
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`${baseClass} ${variants[variant]}`}
+    >
+      {variant === 'trending' && !isSelected && '🔥 '}
+      {variant === 'seasonal' && !isSelected && '🗓️ '}
+      {keyword}
+      {isSelected && ' ✓'}
+    </button>
+  )
+}
+
 export default function GenerateForm({ onSubmit, isLoading }: Props) {
   // 시트 데이터
   const [sheetClinics, setSheetClinics] = useState<string[]>([])
@@ -138,6 +177,23 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
   const [images, setImages] = useState<UploadedImage[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  // 키워드 분석 상태
+  const [keywordState, setKeywordState] = useState<KeywordAnalysisState>({
+    isAnalyzed: false,
+    isAnalyzing: false,
+    recommendedKeywords: {
+      main: [],
+      sub: [],
+      seasonal: [],
+      trending: [],
+    },
+    selectedKeywords: [],
+    seoRecommendations: [],
+    seoScore: null,
+    hasPersona: false,
+    personaPostCount: 0,
+  })
+
   const [formData, setFormData] = useState<GenerateFormData>({
     clinicName: '',
     region: '',
@@ -147,7 +203,7 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
     patientInfo: '',
     treatment: '',
     photoDescription: '',
-    model: 'claude',
+    model: 'claude-haiku',
   })
 
   // 시트 데이터 가져오기
@@ -176,6 +232,15 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
   ) => {
     const { name, value } = e.target
     setFormData((prev) => ({ ...prev, [name]: value }))
+
+    // 주요 필드가 변경되면 분석 상태 초기화
+    if (['clinicName', 'topic', 'customTopic', 'region'].includes(name)) {
+      setKeywordState(prev => ({
+        ...prev,
+        isAnalyzed: false,
+        selectedKeywords: [],
+      }))
+    }
   }
 
   // 이미지 파일 처리 함수
@@ -229,15 +294,92 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
     setImages((prev) => prev.filter((_, i) => i !== index))
   }, [])
 
-  // 파일 선택 버튼 클릭
-  const handleFileButtonClick = useCallback(() => {
-    fileInputRef.current?.click()
-  }, [])
+  // 키워드 선택/해제
+  const toggleKeyword = (keyword: string) => {
+    setKeywordState(prev => {
+      const isSelected = prev.selectedKeywords.includes(keyword)
+      return {
+        ...prev,
+        selectedKeywords: isSelected
+          ? prev.selectedKeywords.filter(k => k !== keyword)
+          : [...prev.selectedKeywords, keyword],
+      }
+    })
+  }
 
+  // 네이버 최적화 분석 실행
+  const handleAnalyzeKeywords = async () => {
+    const finalTopic = customTopicMode && formData.customTopic
+      ? formData.customTopic
+      : formData.topic
+
+    if (!finalTopic) {
+      alert('주제/치료를 선택해주세요.')
+      return
+    }
+
+    setKeywordState(prev => ({ ...prev, isAnalyzing: true }))
+
+    try {
+      const response = await fetch('/api/analyze-keywords', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clinicName: formData.clinicName,
+          topic: finalTopic,
+          region: formData.region,
+        }),
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        setKeywordState({
+          isAnalyzed: true,
+          isAnalyzing: false,
+          recommendedKeywords: data.recommendedKeywords,
+          selectedKeywords: [
+            ...data.recommendedKeywords.main.slice(0, 2),
+            ...data.recommendedKeywords.sub.slice(0, 2),
+          ], // 기본 선택
+          seoRecommendations: data.seoRecommendations,
+          seoScore: data.trendAnalysis?.seoScore || null,
+          hasPersona: !!data.persona,
+          personaPostCount: data.persona?.postCount || 0,
+        })
+      } else {
+        alert(data.error || '키워드 분석에 실패했습니다.')
+        setKeywordState(prev => ({ ...prev, isAnalyzing: false }))
+      }
+    } catch (error) {
+      console.error('Keyword analysis error:', error)
+      alert('키워드 분석에 실패했습니다.')
+      setKeywordState(prev => ({ ...prev, isAnalyzing: false }))
+    }
+  }
+
+  // 글 생성 제출
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
 
     // 최종 토픽 결정
+    const finalTopic = customTopicMode && formData.customTopic
+      ? formData.customTopic
+      : formData.topic
+
+    onSubmit({
+      ...formData,
+      topic: finalTopic,
+      images: images.length > 0 ? images : undefined,
+      selectedKeywords: keywordState.selectedKeywords,
+      usePersona: keywordState.hasPersona,
+    })
+  }
+
+  // 분석 없이 바로 생성
+  const handleDirectGenerate = (e: React.FormEvent) => {
+    e.preventDefault()
+
     const finalTopic = customTopicMode && formData.customTopic
       ? formData.customTopic
       : formData.topic
@@ -251,6 +393,10 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
 
   // 사용할 치료 목록
   const treatmentOptions = sheetTreatments.length > 0 ? sheetTreatments : DEFAULT_TREATMENTS
+
+  // 필수 필드 체크
+  const isBasicInfoComplete = formData.clinicName && formData.region && formData.doctorName &&
+    (formData.topic || formData.customTopic) && formData.patientInfo && formData.treatment
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
@@ -469,7 +615,6 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
           <span className="text-primary-600">팁: 파일명에 before, after, 치료전, 치료후 등을 포함하면 더 정확하게 배치됩니다.</span>
         </p>
 
-        {/* 실제 파일 input - 화면에 보이게 변경 */}
         <input
           ref={fileInputRef}
           type="file"
@@ -516,26 +661,180 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
         )}
       </div>
 
-      {/* 제출 버튼 */}
-      <button
-        type="submit"
-        disabled={isLoading || isLoadingSheet}
-        className="w-full py-4 px-6 bg-primary-600 text-white font-semibold rounded-2xl hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-      >
-        {isLoading ? (
-          <span className="flex items-center justify-center">
-            <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
-            글 생성 중...
-          </span>
-        ) : isLoadingSheet ? (
-          '데이터 로딩 중...'
+      {/* 네이버 최적화 버튼 */}
+      {!keywordState.isAnalyzed && (
+        <button
+          type="button"
+          onClick={handleAnalyzeKeywords}
+          disabled={!isBasicInfoComplete || keywordState.isAnalyzing || isLoading}
+          className="w-full py-4 px-6 bg-green-600 text-white font-semibold rounded-2xl hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        >
+          {keywordState.isAnalyzing ? (
+            <span className="flex items-center justify-center">
+              <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              네이버 키워드 분석 중...
+            </span>
+          ) : (
+            '🔍 네이버 최적화 분석'
+          )}
+        </button>
+      )}
+
+      {/* 키워드 추천 섹션 (분석 완료 시 표시) */}
+      {keywordState.isAnalyzed && (
+        <div className="bg-gradient-to-br from-green-50 to-blue-50 p-6 rounded-2xl border border-green-200">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900">🎯 SEO 키워드 추천</h3>
+            {keywordState.seoScore && (
+              <span className={`px-3 py-1 rounded-full text-sm font-bold ${
+                keywordState.seoScore >= 80 ? 'bg-green-500 text-white' :
+                keywordState.seoScore >= 60 ? 'bg-yellow-500 text-white' :
+                'bg-red-500 text-white'
+              }`}>
+                SEO 점수: {keywordState.seoScore}점
+              </span>
+            )}
+          </div>
+
+          {/* SEO 추천 사항 */}
+          {keywordState.seoRecommendations.length > 0 && (
+            <div className="mb-4 p-3 bg-white rounded-xl">
+              <p className="text-sm font-medium text-gray-700 mb-2">📊 분석 결과</p>
+              <ul className="text-sm text-gray-600 space-y-1">
+                {keywordState.seoRecommendations.map((rec, i) => (
+                  <li key={i}>{rec}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* 트렌딩 키워드 */}
+          {keywordState.recommendedKeywords.trending.length > 0 && (
+            <div className="mb-4">
+              <p className="text-sm font-medium text-gray-700 mb-2">🔥 인기 키워드</p>
+              <div className="flex flex-wrap gap-2">
+                {keywordState.recommendedKeywords.trending.map((keyword) => (
+                  <KeywordButton
+                    key={keyword}
+                    keyword={keyword}
+                    isSelected={keywordState.selectedKeywords.includes(keyword)}
+                    onClick={() => toggleKeyword(keyword)}
+                    variant="trending"
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* 계절 키워드 */}
+          {keywordState.recommendedKeywords.seasonal.length > 0 && (
+            <div className="mb-4">
+              <p className="text-sm font-medium text-gray-700 mb-2">🗓️ 이번 달 인기</p>
+              <div className="flex flex-wrap gap-2">
+                {keywordState.recommendedKeywords.seasonal.map((keyword) => (
+                  <KeywordButton
+                    key={keyword}
+                    keyword={keyword}
+                    isSelected={keywordState.selectedKeywords.includes(keyword)}
+                    onClick={() => toggleKeyword(keyword)}
+                    variant="seasonal"
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* 메인 키워드 */}
+          {keywordState.recommendedKeywords.main.length > 0 && (
+            <div className="mb-4">
+              <p className="text-sm font-medium text-gray-700 mb-2">📌 메인 키워드</p>
+              <div className="flex flex-wrap gap-2">
+                {keywordState.recommendedKeywords.main.map((keyword) => (
+                  <KeywordButton
+                    key={keyword}
+                    keyword={keyword}
+                    isSelected={keywordState.selectedKeywords.includes(keyword)}
+                    onClick={() => toggleKeyword(keyword)}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* 서브 키워드 */}
+          {keywordState.recommendedKeywords.sub.length > 0 && (
+            <div className="mb-4">
+              <p className="text-sm font-medium text-gray-700 mb-2">🏷️ 서브 키워드</p>
+              <div className="flex flex-wrap gap-2">
+                {keywordState.recommendedKeywords.sub.map((keyword) => (
+                  <KeywordButton
+                    key={keyword}
+                    keyword={keyword}
+                    isSelected={keywordState.selectedKeywords.includes(keyword)}
+                    onClick={() => toggleKeyword(keyword)}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* 선택된 키워드 표시 */}
+          {keywordState.selectedKeywords.length > 0 && (
+            <div className="mt-4 p-3 bg-white rounded-xl">
+              <p className="text-sm font-medium text-gray-700 mb-2">
+                ✅ 선택된 키워드 ({keywordState.selectedKeywords.length}개)
+              </p>
+              <p className="text-sm text-primary-600">
+                {keywordState.selectedKeywords.join(', ')}
+              </p>
+            </div>
+          )}
+
+          {/* 다시 분석 버튼 */}
+          <button
+            type="button"
+            onClick={() => setKeywordState(prev => ({ ...prev, isAnalyzed: false }))}
+            className="mt-4 text-sm text-gray-500 hover:text-gray-700"
+          >
+            ← 다시 분석하기
+          </button>
+        </div>
+      )}
+
+      {/* 글 생성 버튼 */}
+      <div className="space-y-3">
+        {keywordState.isAnalyzed ? (
+          <button
+            type="submit"
+            disabled={isLoading || isLoadingSheet}
+            className="w-full py-4 px-6 bg-primary-600 text-white font-semibold rounded-2xl hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {isLoading ? (
+              <span className="flex items-center justify-center">
+                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                글 생성 중...
+              </span>
+            ) : (
+              <>✨ 의료법 준수 블로그 글 생성하기</>
+            )}
+          </button>
         ) : (
-          '✨ 블로그 글 생성하기'
+          <button
+            type="button"
+            onClick={handleDirectGenerate}
+            disabled={isLoading || isLoadingSheet || !isBasicInfoComplete}
+            className="w-full py-3 px-6 bg-gray-100 text-gray-700 font-medium rounded-2xl hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
+          >
+            {isLoadingSheet ? '데이터 로딩 중...' : '⚡ 분석 없이 바로 생성하기'}
+          </button>
         )}
-      </button>
+      </div>
     </form>
   )
 }
