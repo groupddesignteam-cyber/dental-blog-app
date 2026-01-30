@@ -1,0 +1,95 @@
+// 의료광고법 규칙 (medical_law.md 기반)
+
+// 시술별 필수 고지 문구
+export const REQUIRED_DISCLAIMERS: Record<string, string> = {
+  임플란트: `※ 임플란트 시술 후 출혈, 부종, 감염 등의 부작용이 발생할 수 있으며,
+개인에 따라 결과가 다를 수 있습니다.
+정기적인 검진과 관리가 필요합니다.`,
+
+  보톡스: `※ 시술 후 멍, 부종, 감염 등의 부작용이 발생할 수 있습니다.
+개인에 따라 효과와 유지 기간이 다를 수 있습니다.`,
+
+  미백: `※ 미백 시술 후 일시적인 시린 증상이 나타날 수 있으며,
+개인에 따라 미백 효과가 다를 수 있습니다.`,
+
+  라미네이트: `※ 치아 삭제가 필요할 수 있으며, 시술 후 시린 증상이
+일시적으로 나타날 수 있습니다.`,
+
+  올세라믹: `※ 치아 삭제가 필요할 수 있으며, 시술 후 시린 증상이
+일시적으로 나타날 수 있습니다.`,
+
+  발치: `※ 발치 후 출혈, 부종, 감염, 일시적 감각 이상 등이
+발생할 수 있습니다.`,
+
+  사랑니: `※ 발치 후 출혈, 부종, 감염, 일시적 감각 이상 등이
+발생할 수 있습니다.`,
+
+  교정: `※ 교정치료 중 치아 우식, 잇몸 질환, 치근 흡수 등이
+발생할 수 있으며, 유지장치 미착용 시 재발 가능성이 있습니다.`,
+
+  신경치료: `※ 신경치료 후 일시적인 불편감이 있을 수 있으며,
+개인에 따라 치료 결과가 다를 수 있습니다.`,
+
+  충치: `※ 치료 후 일시적인 시린 증상이 나타날 수 있으며,
+개인에 따라 결과가 다를 수 있습니다.`,
+
+  스케일링: `※ 스케일링 후 일시적인 시린 증상이 나타날 수 있습니다.`,
+
+  보철: `※ 보철 치료 후 적응 기간이 필요할 수 있으며,
+개인에 따라 결과가 다를 수 있습니다.`,
+}
+
+// 금지되는 표현 패턴
+export const FORBIDDEN_PATTERNS = [
+  // 과장 광고
+  { pattern: /최고|최첨단|최신|유일|독보적/g, reason: '과장 광고' },
+  { pattern: /완치|100%\s*성공|무통증/g, reason: '과장 광고' },
+  { pattern: /\d+위|국내\s*최초/g, reason: '비교 광고' },
+  // 환자 유인
+  { pattern: /할인|이벤트|무료|저렴|싼|가성비/g, reason: '환자 유인' },
+  { pattern: /사은품|경품/g, reason: '환자 유인' },
+  // 후기 형식
+  { pattern: /저는.*치과에서|치료\s*후기|체험담/g, reason: '후기 형식 금지' },
+]
+
+// 허용되는 표현
+export const ALLOWED_EXPRESSIONS = [
+  '○○ 치료를 진행했습니다',
+  '이런 경우 ○○ 방법을 고려할 수 있습니다',
+  '개인에 따라 결과가 다를 수 있습니다',
+  '정기적인 관리가 필요합니다',
+  '자세한 내용은 상담을 통해 안내드립니다',
+]
+
+// 고지문 가져오기 함수
+export function getDisclaimer(topic: string): string {
+  // 주제에서 키워드 매칭
+  const topicLower = topic.toLowerCase()
+
+  for (const [key, disclaimer] of Object.entries(REQUIRED_DISCLAIMERS)) {
+    if (topicLower.includes(key.toLowerCase()) ||
+        topicLower.includes(key)) {
+      return disclaimer
+    }
+  }
+
+  // 기본 고지문
+  return `※ 시술 후 부작용이 발생할 수 있으며,
+개인에 따라 결과가 다를 수 있습니다.`
+}
+
+// 금지 표현 검사 함수
+export function checkForbiddenPatterns(text: string): Array<{ match: string; reason: string }> {
+  const violations: Array<{ match: string; reason: string }> = []
+
+  for (const { pattern, reason } of FORBIDDEN_PATTERNS) {
+    const matches = text.match(pattern)
+    if (matches) {
+      matches.forEach(match => {
+        violations.push({ match, reason })
+      })
+    }
+  }
+
+  return violations
+}
