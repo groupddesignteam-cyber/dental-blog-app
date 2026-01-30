@@ -79,10 +79,10 @@ function SearchableSelect({
         }}
         placeholder={placeholder}
         required={required && !value}
-        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+        className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500"
       />
       {isOpen && (
-        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-xl shadow-lg max-h-60 overflow-y-auto">
           {filteredOptions.length > 0 ? (
             filteredOptions.map((opt) => (
               <button
@@ -93,9 +93,8 @@ function SearchableSelect({
                   setSearch('')
                   setIsOpen(false)
                 }}
-                className={`w-full px-3 py-2 text-left hover:bg-primary-50 ${
-                  value === opt ? 'bg-primary-100 text-primary-700' : ''
-                }`}
+                className={`w-full px-3 py-2 text-left hover:bg-primary-50 ${value === opt ? 'bg-primary-100 text-primary-700' : ''
+                  }`}
               >
                 {opt}
               </button>
@@ -252,17 +251,16 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       {/* AI 모델 선택 */}
-      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+      <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">🤖 AI 모델 선택</h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           {LLM_MODELS.map((model) => (
             <label
               key={model.id}
-              className={`relative flex flex-col p-4 cursor-pointer rounded-lg border-2 transition-all ${
-                formData.model === model.id
+              className={`relative flex flex-col p-4 cursor-pointer rounded-xl border-2 transition-all ${formData.model === model.id
                   ? 'border-primary-500 bg-primary-50'
                   : 'border-gray-200 hover:border-gray-300'
-              }`}
+                }`}
             >
               <input
                 type="radio"
@@ -283,7 +281,7 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
       </div>
 
       {/* 치과 정보 */}
-      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+      <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">🏥 치과 정보</h3>
         <div className="space-y-4">
           {/* 치과명 선택/입력 */}
@@ -312,7 +310,7 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
                   onChange={handleChange}
                   required
                   placeholder="예: 서울하이탑치과"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500"
                 />
                 {sheetClinics.length > 0 && (
                   <button
@@ -343,7 +341,7 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
                 onChange={handleChange}
                 required
                 placeholder="예: 부평, 간석동"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500"
               />
             </div>
             <div>
@@ -357,7 +355,7 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
                 onChange={handleChange}
                 required
                 placeholder="예: 윤홍기"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500"
               />
             </div>
           </div>
@@ -365,7 +363,7 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
       </div>
 
       {/* 글 정보 */}
-      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+      <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">📝 글 정보</h3>
         <div className="space-y-4">
           {/* 주제/치료 선택/입력 */}
@@ -394,7 +392,7 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
                   onChange={handleChange}
                   required
                   placeholder="예: 턱관절 치료, 레진 치료"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500"
                 />
                 <button
                   type="button"
@@ -421,7 +419,7 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
               onChange={handleChange}
               required
               placeholder="예: 50대 남성, 어금니 통증"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500"
             />
             <p className="mt-1 text-xs text-gray-500">성별, 연령대, 주호소를 입력하세요</p>
           </div>
@@ -437,7 +435,7 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
               required
               rows={3}
               placeholder="예: 하악 좌측 제1대구치 임플란트 식립, 골이식 동반"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500"
             />
             <p className="mt-1 text-xs text-gray-500">구체적인 시술 내용을 입력하세요</p>
           </div>
@@ -452,14 +450,14 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
               onChange={handleChange}
               rows={2}
               placeholder="예: Before - 치아 파절 상태, After - 지르코니아 보철 완료"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500"
             />
           </div>
         </div>
       </div>
 
       {/* 이미지 업로드 */}
-      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+      <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">📷 이미지 업로드 (선택)</h3>
         <p className="text-sm text-gray-500 mb-4">
           이미지를 업로드하면 파일명을 기반으로 블로그 글 적절한 위치에 배치됩니다.
@@ -480,7 +478,7 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
 
         <label
           htmlFor="image-upload"
-          className="block w-full py-3 px-4 border-2 border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-primary-500 hover:text-primary-600 transition-colors cursor-pointer text-center"
+          className="block w-full py-3 px-4 border-2 border-dashed border-gray-300 rounded-xl text-gray-600 hover:border-primary-500 hover:text-primary-600 transition-colors cursor-pointer text-center"
         >
           📁 클릭하여 이미지 선택 (여러 장 가능, GIF 지원)
         </label>
@@ -495,9 +493,9 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
                   <img
                     src={img.url}
                     alt={img.name}
-                    className="w-full h-24 object-cover rounded-lg border border-gray-200"
+                    className="w-full h-24 object-cover rounded-xl border border-gray-200"
                   />
-                  <div className="absolute inset-0 bg-black bg-opacity-50 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex items-center justify-center">
+                  <div className="absolute inset-0 bg-black bg-opacity-50 opacity-0 group-hover:opacity-100 transition-opacity rounded-xl flex items-center justify-center">
                     <button
                       type="button"
                       onClick={() => removeImage(index)}
@@ -518,7 +516,7 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
       <button
         type="submit"
         disabled={isLoading || isLoadingSheet}
-        className="w-full py-4 px-6 bg-primary-600 text-white font-semibold rounded-xl hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        className="w-full py-4 px-6 bg-primary-600 text-white font-semibold rounded-2xl hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
       >
         {isLoading ? (
           <span className="flex items-center justify-center">
