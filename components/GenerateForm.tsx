@@ -23,6 +23,12 @@ const TOPICS = [
   '기타',
 ]
 
+const LLM_MODELS = [
+  { id: 'claude', name: 'Claude (Anthropic)', description: '추천 - 한국어 글쓰기 우수' },
+  { id: 'openai', name: 'GPT-4o (OpenAI)', description: '범용성 높음' },
+  { id: 'gemini', name: 'Gemini (Google)', description: '빠른 응답' },
+] as const
+
 export default function GenerateForm({ onSubmit, isLoading }: Props) {
   const [formData, setFormData] = useState<GenerateFormData>({
     clinicName: '',
@@ -32,6 +38,7 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
     patientInfo: '',
     treatment: '',
     photoDescription: '',
+    model: 'claude',
   })
 
   const handleChange = (
@@ -48,6 +55,37 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
+      {/* AI 모델 선택 */}
+      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">🤖 AI 모델 선택</h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          {LLM_MODELS.map((model) => (
+            <label
+              key={model.id}
+              className={`relative flex flex-col p-4 cursor-pointer rounded-lg border-2 transition-all ${
+                formData.model === model.id
+                  ? 'border-primary-500 bg-primary-50'
+                  : 'border-gray-200 hover:border-gray-300'
+              }`}
+            >
+              <input
+                type="radio"
+                name="model"
+                value={model.id}
+                checked={formData.model === model.id}
+                onChange={handleChange}
+                className="sr-only"
+              />
+              <span className="font-medium text-gray-900">{model.name}</span>
+              <span className="text-xs text-gray-500 mt-1">{model.description}</span>
+              {formData.model === model.id && (
+                <span className="absolute top-2 right-2 text-primary-500">✓</span>
+              )}
+            </label>
+          ))}
+        </div>
+      </div>
+
       {/* 치과 정보 */}
       <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">🏥 치과 정보</h3>

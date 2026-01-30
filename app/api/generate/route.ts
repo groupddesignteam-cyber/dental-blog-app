@@ -1,6 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk'
+import OpenAI from 'openai'
+import { GoogleGenerativeAI } from '@google/generative-ai'
 import { NextRequest } from 'next/server'
-import { GenerateFormData } from '@/types'
+import { GenerateFormData, LLMModel } from '@/types'
 
 // 데이터 파일들
 import { TERM_REPLACEMENTS, FORBIDDEN_WORDS, MEDICAL_FACTS, METAPHORS } from '@/data/knowledge'
@@ -10,13 +12,19 @@ import { getSeasonHook } from '@/data/season'
 import { INTRO_PATTERNS, BODY_PATTERNS, CLOSING_PATTERNS, TOPIC_PATTERNS } from '@/data/patterns'
 import { generateMainKeyword, suggestSubKeywords } from '@/data/keywords'
 
-// RAG 및 네이버 API
+// RAG
 import { generateRAGContext } from '@/lib/sheets-rag'
-import { analyzeDentalKeywordTrend, getMonthlyPopularKeywords } from '@/lib/naver-datalab'
 
+// LLM 클라이언트 초기화
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 })
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+})
+
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '')
 
 // 통합 시스템 프롬프트 생성
 function buildSystemPrompt(topic: string): string {
@@ -95,41 +103,16 @@ ${METAPHORS[topic as keyof typeof METAPHORS] || '환자가 이해하기 쉬운 �
 `
 }
 
-export async function POST(request: NextRequest) {
-  try {
-    const data: GenerateFormData = await request.json()
-
-    // 시즌 훅 가져오기
-    const seasonHook = getSeasonHook(data.topic)
-
-    // 메인/서브 키워드 생성
-    const mainKeyword = generateMainKeyword(data.region, data.topic)
-    const subKeywords = suggestSubKeywords(data.topic)
-
-    // 월별 인기 키워드
-    const popularKeywords = getMonthlyPopularKeywords()
-
-    // RAG 컨텍스트 (기존 글 참조)
-    let ragContext = ''
-    try {
-      ragContext = await generateRAGContext(data.topic)
-    } catch (e) {
-      ragContext = '[기존 글 DB 참조 불가]'
-    }
-
-    // 네이버 키워드 트렌드 분석
-    let trendAnalysis = ''
-    try {
-      const { analysis } = await analyzeDentalKeywordTrend(data.topic)
-      trendAnalysis = analysis
-    } catch (e) {
-      trendAnalysis = '[키워드 트렌드 분석 불가]'
-    }
-
-    // 해시태그 미리 생성
-    const hashtags = generateHashtags(mainKeyword, subKeywords, data.region, data.topic)
-
-    const userPrompt = `다음 정보를 바탕으로 치과 블로그 글을 작성해주세요.
+// 사용자 프롬프트 생성
+function buildUserPrompt(
+  data: GenerateFormData,
+  mainKeyword: string,
+  subKeywords: string[],
+  hashtags: string[],
+  seasonHook: string,
+  ragContext: string
+): string {
+  return `다음 정보를 바탕으로 치과 블로그 글을 작성해주세요.
 
 ## 입력 정보
 - 치과명: ${data.clinicName}
@@ -143,7 +126,6 @@ ${data.photoDescription ? `- 사진 설명: ${data.photoDescription}` : ''}
 ## 키워드 전략
 - 메인 키워드: "${mainKeyword}" (5~7회 배치)
 - 서브 키워드: ${subKeywords.join(', ')}
-- 이번 달 인기 키워드: ${popularKeywords.join(', ')}
 - 추천 해시태그: ${hashtags.join(' ')}
 
 ## 시즌 훅 (서문에 자연스럽게 활용)
@@ -152,10 +134,6 @@ ${data.photoDescription ? `- 사진 설명: ${data.photoDescription}` : ''}
 ${ragContext !== '[기존 글 DB 참조 불가]' && ragContext !== '[참조 가능한 기존 글 없음]' ? `
 ## 기존 글 패턴 참조
 ${ragContext}
-` : ''}
-
-${trendAnalysis !== '[키워드 트렌드 분석 불가]' ? `
-${trendAnalysis}
 ` : ''}
 
 ## 요청사항
@@ -167,9 +145,112 @@ ${trendAnalysis}
 6. 위에서 제안한 해시태그 10개 사용
 
 글 작성을 시작해주세요.`
+}
 
-    // 시스템 프롬프트 빌드
+// Claude API 스트리밍
+async function* streamClaude(systemPrompt: string, userPrompt: string) {
+  const response = await anthropic.messages.create({
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: 4096,
+    system: systemPrompt,
+    messages: [{ role: 'user', content: userPrompt }],
+    stream: true,
+  })
+
+  for await (const event of response) {
+    if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+      yield event.delta.text
+    }
+  }
+}
+
+// OpenAI API 스트리밍
+async function* streamOpenAI(systemPrompt: string, userPrompt: string) {
+  const response = await openai.chat.completions.create({
+    model: 'gpt-4o',
+    max_tokens: 4096,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt },
+    ],
+    stream: true,
+  })
+
+  for await (const chunk of response) {
+    const text = chunk.choices[0]?.delta?.content
+    if (text) {
+      yield text
+    }
+  }
+}
+
+// Gemini API 스트리밍
+async function* streamGemini(systemPrompt: string, userPrompt: string) {
+  const model = genAI.getGenerativeModel({
+    model: 'gemini-1.5-pro',
+    systemInstruction: systemPrompt,
+  })
+
+  const result = await model.generateContentStream(userPrompt)
+
+  for await (const chunk of result.stream) {
+    const text = chunk.text()
+    if (text) {
+      yield text
+    }
+  }
+}
+
+// 모델별 스트리밍 선택
+function getStreamGenerator(model: LLMModel, systemPrompt: string, userPrompt: string) {
+  switch (model) {
+    case 'openai':
+      return streamOpenAI(systemPrompt, userPrompt)
+    case 'gemini':
+      return streamGemini(systemPrompt, userPrompt)
+    case 'claude':
+    default:
+      return streamClaude(systemPrompt, userPrompt)
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const data: GenerateFormData = await request.json()
+
+    // API 키 확인
+    const model = data.model || 'claude'
+    if (model === 'claude' && !process.env.ANTHROPIC_API_KEY) {
+      return new Response(JSON.stringify({ error: 'Claude API 키가 설정되지 않았습니다.' }), { status: 400 })
+    }
+    if (model === 'openai' && !process.env.OPENAI_API_KEY) {
+      return new Response(JSON.stringify({ error: 'OpenAI API 키가 설정되지 않았습니다.' }), { status: 400 })
+    }
+    if (model === 'gemini' && !process.env.GEMINI_API_KEY) {
+      return new Response(JSON.stringify({ error: 'Gemini API 키가 설정되지 않았습니다.' }), { status: 400 })
+    }
+
+    // 시즌 훅 가져오기
+    const seasonHook = getSeasonHook(data.topic)
+
+    // 메인/서브 키워드 생성
+    const mainKeyword = generateMainKeyword(data.region, data.topic)
+    const subKeywords = suggestSubKeywords(data.topic)
+
+    // RAG 컨텍스트 (기존 글 참조)
+    let ragContext = ''
+    try {
+      ragContext = await generateRAGContext(data.topic)
+    } catch (e) {
+      ragContext = '[기존 글 DB 참조 불가]'
+    }
+
+    // 해시태그 미리 생성
+    const hashtags = generateHashtags(mainKeyword, subKeywords, data.region, data.topic)
+
+    // 프롬프트 빌드
     const systemPrompt = buildSystemPrompt(data.topic)
+    const userPrompt = buildUserPrompt(data, mainKeyword, subKeywords, hashtags, seasonHook, ragContext)
 
     // 스트리밍 응답 생성
     const encoder = new TextEncoder()
@@ -178,26 +259,18 @@ ${trendAnalysis}
         try {
           let fullContent = ''
 
-          const response = await anthropic.messages.create({
-            model: 'claude-sonnet-4-20250514',
-            max_tokens: 4096,
-            system: systemPrompt,
-            messages: [{ role: 'user', content: userPrompt }],
-            stream: true,
-          })
+          // 모델 정보 전송
+          controller.enqueue(
+            encoder.encode(`data: ${JSON.stringify({ type: 'model', model })}\n\n`)
+          )
 
-          for await (const event of response) {
-            if (
-              event.type === 'content_block_delta' &&
-              event.delta.type === 'text_delta'
-            ) {
-              const text = event.delta.text
-              fullContent += text
+          const generator = getStreamGenerator(model, systemPrompt, userPrompt)
 
-              controller.enqueue(
-                encoder.encode(`data: ${JSON.stringify({ type: 'content', text })}\n\n`)
-              )
-            }
+          for await (const text of generator) {
+            fullContent += text
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify({ type: 'content', text })}\n\n`)
+            )
           }
 
           // 메타데이터 파싱
@@ -242,6 +315,7 @@ ${trendAnalysis}
                   },
                   hashtags: metadata.hashtags,
                   charCount: metadata.charCount,
+                  model: model,
                 },
               })}\n\n`
             )
@@ -250,6 +324,7 @@ ${trendAnalysis}
           controller.enqueue(encoder.encode('data: [DONE]\n\n'))
           controller.close()
         } catch (error) {
+          console.error('Stream error:', error)
           controller.error(error)
         }
       },

@@ -6,6 +6,8 @@ export interface Clinic {
   createdAt: string
 }
 
+export type LLMModel = 'claude' | 'openai' | 'gemini'
+
 export interface GenerateFormData {
   clinicName: string
   region: string
@@ -14,6 +16,7 @@ export interface GenerateFormData {
   patientInfo: string
   treatment: string
   photoDescription?: string
+  model: LLMModel
 }
 
 export interface Post {
