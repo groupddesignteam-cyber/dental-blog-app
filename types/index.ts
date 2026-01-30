@@ -8,15 +8,23 @@ export interface Clinic {
 
 export type LLMModel = 'claude' | 'openai' | 'gemini'
 
+export interface UploadedImage {
+  name: string
+  url: string // base64 data URL for preview
+  file?: File // 클라이언트에서만 사용, API 전송 시 제외
+}
+
 export interface GenerateFormData {
   clinicName: string
   region: string
   doctorName: string
   topic: string
+  customTopic?: string // 직접 입력한 치료명
   patientInfo: string
   treatment: string
   photoDescription?: string
   model: LLMModel
+  images?: UploadedImage[]
 }
 
 export interface Post {

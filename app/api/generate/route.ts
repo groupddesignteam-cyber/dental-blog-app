@@ -106,6 +106,47 @@ ${METAPHORS[topic as keyof typeof METAPHORS] || '환자가 이해하기 쉬운 �
 `
 }
 
+// 이미지 파일명에서 배치 힌트 추출
+function analyzeImageNames(imageNames: string[]): string {
+  if (!imageNames || imageNames.length === 0) return ''
+
+  const analyzed = imageNames.map((name, index) => {
+    const lower = name.toLowerCase()
+    let hint = ''
+
+    if (lower.includes('before') || lower.includes('전') || lower.includes('치료전')) {
+      hint = '치료 전 상태'
+    } else if (lower.includes('after') || lower.includes('후') || lower.includes('치료후')) {
+      hint = '치료 후 상태'
+    } else if (lower.includes('xray') || lower.includes('x-ray') || lower.includes('엑스레이')) {
+      hint = 'X-ray 사진'
+    } else if (lower.includes('ct') || lower.includes('씨티')) {
+      hint = 'CT 사진'
+    } else if (lower.includes('과정') || lower.includes('진행')) {
+      hint = '치료 과정'
+    } else {
+      hint = '참고 이미지'
+    }
+
+    return `${index + 1}. ${name} → ${hint}`
+  })
+
+  return `
+## 📷 이미지 배치 안내
+아래 이미지들을 글의 적절한 위치에 배치해주세요.
+이미지는 \`[IMAGE_${'{숫자}'}\]\` 형식으로 표시합니다.
+
+${analyzed.join('\n')}
+
+**배치 규칙:**
+- before/치료전 이미지: 증상 설명 섹션 근처
+- after/치료후 이미지: 치료 결과 섹션 근처
+- X-ray/CT 이미지: 진단 설명 부분
+- 과정 이미지: 치료 과정 설명 부분
+- 일반 이미지: 관련 내용 근처에 자연스럽게 배치
+`
+}
+
 // 사용자 프롬프트 생성
 function buildUserPrompt(
   data: GenerateFormData,
@@ -115,8 +156,11 @@ function buildUserPrompt(
   seasonHook: string,
   ragContext: string,
   trendAnalysis: string,
-  popularKeywords: string[]
+  popularKeywords: string[],
+  imageNames: string[]
 ): string {
+  const imageSection = analyzeImageNames(imageNames)
+
   return `다음 정보를 바탕으로 치과 블로그 글을 작성해주세요.
 
 ## 입력 정보
@@ -146,6 +190,8 @@ ${trendAnalysis && trendAnalysis !== '[키워드 트렌드 분석 불가]' ? `
 ${trendAnalysis}
 ` : ''}
 
+${imageSection}
+
 ## 요청사항
 1. 1,800~2,200자 분량으로 작성
 2. 메인 키워드 5~7회, 서브 키워드 각 2~3회 자연스럽게 배치
@@ -153,6 +199,7 @@ ${trendAnalysis}
 4. 스마트블록용 Q&A 포함
 5. 해당 시술의 부작용 고지문 반드시 포함
 6. 위에서 제안한 해시태그 10개 사용
+${imageNames.length > 0 ? '7. 이미지 플레이스홀더를 적절한 위치에 배치 (예: [IMAGE_1], [IMAGE_2])' : ''}
 
 글 작성을 시작해주세요.`
 }
@@ -270,9 +317,12 @@ export async function POST(request: NextRequest) {
     // 해시태그 미리 생성
     const hashtags = generateHashtags(mainKeyword, subKeywords, data.region, data.topic)
 
+    // 이미지 파일명 추출
+    const imageNames = data.images?.map(img => img.name) || []
+
     // 프롬프트 빌드
     const systemPrompt = buildSystemPrompt(data.topic)
-    const userPrompt = buildUserPrompt(data, mainKeyword, subKeywords, hashtags, seasonHook, ragContext, trendAnalysis, popularKeywords)
+    const userPrompt = buildUserPrompt(data, mainKeyword, subKeywords, hashtags, seasonHook, ragContext, trendAnalysis, popularKeywords, imageNames)
 
     // 스트리밍 응답 생성
     const encoder = new TextEncoder()

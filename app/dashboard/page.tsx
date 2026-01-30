@@ -18,12 +18,18 @@ export default function DashboardPage() {
     setStreamContent('')
 
     try {
+      // 이미지에서 file 속성 제외 (JSON 직렬화 불가)
+      const payload = {
+        ...data,
+        images: data.images?.map(img => ({ name: img.name, url: img.url })),
+      }
+
       const response = await fetch('/api/generate', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(data),
+        body: JSON.stringify(payload),
       })
 
       if (!response.ok) {
