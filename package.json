@@ -9,23 +9,23 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.39.0",
-    "googleapis": "^144.0.0",
-    "next": "14.2.28",
+    "@anthropic-ai/sdk": "^0.72.1",
+    "googleapis": "^171.0.0",
+    "next": "^15.5.11",
     "next-auth": "^4.24.11",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "react-markdown": "^9.0.3"
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "react-markdown": "^10.1.0"
   },
   "devDependencies": {
-    "@types/node": "^20.17.14",
-    "@types/react": "^18.3.18",
-    "@types/react-dom": "^18.3.5",
+    "@types/node": "^22.15.21",
+    "@types/react": "^19.2.10",
+    "@types/react-dom": "^19.2.3",
     "autoprefixer": "^10.4.20",
-    "eslint": "^8.57.1",
-    "eslint-config-next": "14.2.28",
-    "postcss": "^8.4.49",
-    "tailwindcss": "^3.4.17",
-    "typescript": "^5.7.3"
+    "eslint": "^9.28.0",
+    "eslint-config-next": "^15.5.11",
+    "postcss": "^8.5.4",
+    "tailwindcss": "^3.4.19",
+    "typescript": "^5.8.4"
   }
 }
