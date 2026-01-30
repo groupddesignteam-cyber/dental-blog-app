@@ -15,6 +15,9 @@ import { generateMainKeyword, suggestSubKeywords } from '@/data/keywords'
 // RAG
 import { generateRAGContext } from '@/lib/sheets-rag'
 
+// 네이버 DataLab API
+import { analyzeDentalKeywordTrend, getMonthlyPopularKeywords } from '@/lib/naver-datalab'
+
 // LLM 클라이언트 초기화
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -110,7 +113,9 @@ function buildUserPrompt(
   subKeywords: string[],
   hashtags: string[],
   seasonHook: string,
-  ragContext: string
+  ragContext: string,
+  trendAnalysis: string,
+  popularKeywords: string[]
 ): string {
   return `다음 정보를 바탕으로 치과 블로그 글을 작성해주세요.
 
@@ -126,6 +131,7 @@ ${data.photoDescription ? `- 사진 설명: ${data.photoDescription}` : ''}
 ## 키워드 전략
 - 메인 키워드: "${mainKeyword}" (5~7회 배치)
 - 서브 키워드: ${subKeywords.join(', ')}
+- 이번 달 인기 키워드: ${popularKeywords.join(', ')}
 - 추천 해시태그: ${hashtags.join(' ')}
 
 ## 시즌 훅 (서문에 자연스럽게 활용)
@@ -134,6 +140,10 @@ ${data.photoDescription ? `- 사진 설명: ${data.photoDescription}` : ''}
 ${ragContext !== '[기존 글 DB 참조 불가]' && ragContext !== '[참조 가능한 기존 글 없음]' ? `
 ## 기존 글 패턴 참조
 ${ragContext}
+` : ''}
+
+${trendAnalysis && trendAnalysis !== '[키워드 트렌드 분석 불가]' ? `
+${trendAnalysis}
 ` : ''}
 
 ## 요청사항
@@ -237,6 +247,9 @@ export async function POST(request: NextRequest) {
     const mainKeyword = generateMainKeyword(data.region, data.topic)
     const subKeywords = suggestSubKeywords(data.topic)
 
+    // 월별 인기 키워드
+    const popularKeywords = getMonthlyPopularKeywords()
+
     // RAG 컨텍스트 (기존 글 참조)
     let ragContext = ''
     try {
@@ -245,12 +258,21 @@ export async function POST(request: NextRequest) {
       ragContext = '[기존 글 DB 참조 불가]'
     }
 
+    // 네이버 키워드 트렌드 분석
+    let trendAnalysis = ''
+    try {
+      const { analysis } = await analyzeDentalKeywordTrend(data.topic)
+      trendAnalysis = analysis
+    } catch (e) {
+      trendAnalysis = '[키워드 트렌드 분석 불가]'
+    }
+
     // 해시태그 미리 생성
     const hashtags = generateHashtags(mainKeyword, subKeywords, data.region, data.topic)
 
     // 프롬프트 빌드
     const systemPrompt = buildSystemPrompt(data.topic)
-    const userPrompt = buildUserPrompt(data, mainKeyword, subKeywords, hashtags, seasonHook, ragContext)
+    const userPrompt = buildUserPrompt(data, mainKeyword, subKeywords, hashtags, seasonHook, ragContext, trendAnalysis, popularKeywords)
 
     // 스트리밍 응답 생성
     const encoder = new TextEncoder()
