@@ -14,10 +14,19 @@ export type LLMModel =
   | 'openai-mini'   // GPT-4o-mini (빠름, 저비용) 💰
   | 'gemini'        // Gemini Pro (고품질, 무료/저비용)
 
+// 이미지 태그 타입
+export type ImageTag = 'before' | 'after' | 'xray' | 'ct' | 'progress' | 'other'
+
+// 글쓰기 페르소나 모드
+export type WritingMode =
+  | 'expert'      // 전문가 모드: 의학적 정확성, 전문 용어, 신뢰감
+  | 'informative' // 정보성 모드: 재미있고 흥미로운, 이해하기 쉬운
+
 export interface UploadedImage {
   name: string
   url: string // base64 data URL for preview
   file?: File // 클라이언트에서만 사용, API 전송 시 제외
+  tag?: ImageTag // 이미지 유형 태그
 }
 
 export interface GenerateFormData {
@@ -35,6 +44,8 @@ export interface GenerateFormData {
   selectedKeywords?: string[]
   // 치과별 페르소나 사용 여부
   usePersona?: boolean
+  // 글쓰기 모드 (전문가/정보성)
+  writingMode?: WritingMode
 }
 
 // 키워드 분석 결과 타입 (클라이언트용)
@@ -81,4 +92,5 @@ export interface GenerateResult {
   hashtags: string[]
   charCount: number
   imageFileNames?: string[]
+  warnings?: string[] // 의료법 위반, 글자수 경고 등
 }

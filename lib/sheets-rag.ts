@@ -3,6 +3,36 @@
 
 import { google } from 'googleapis'
 
+// API Key 방식으로 시트 데이터 가져오기 (더 간단하고 안정적)
+async function fetchSheetDataWithApiKey(range: string): Promise<string[][] | null> {
+  const sheetId = process.env.GOOGLE_SHEETS_ID
+  const apiKey = process.env.GOOGLE_API_KEY
+
+  if (!sheetId || !apiKey) {
+    console.log('[Sheets] API Key 또는 Sheet ID가 없습니다.')
+    return null
+  }
+
+  try {
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(range)}?key=${apiKey}`
+    const response = await fetch(url, {
+      headers: { 'Accept': 'application/json' },
+      cache: 'no-store',
+    })
+
+    if (!response.ok) {
+      console.log(`[Sheets] API 오류: ${response.status}`)
+      return null
+    }
+
+    const data = await response.json()
+    return data.values || []
+  } catch (error) {
+    console.error('[Sheets] 데이터 가져오기 실패:', error)
+    return null
+  }
+}
+
 // 주제별 키워드 매핑
 const TOPIC_KEYWORDS: Record<string, string[]> = {
   '임플란트': ['임플란트', '식립', '인공치아', '뼈이식', '골이식', '픽스쳐'],
@@ -141,76 +171,60 @@ function extractExpressions(content: string): PatternAnalysis['commonExpressions
   return expressions
 }
 
-// 유사한 글 찾기
+// 유사한 글 찾기 (API Key 방식)
 export async function findSimilarPosts(
   queryTopic: string,
   sheetId?: string,
   topN: number = 3
 ): Promise<SimilarPost[]> {
-  const spreadsheetId = sheetId || process.env.GOOGLE_SHEETS_ID
+  // API Key 방식으로 데이터 가져오기
+  const rows = await fetchSheetDataWithApiKey('Rawdata!A2:F')
 
-  if (!spreadsheetId || !process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL) {
-    console.log('Google Sheets 설정이 없습니다.')
+  if (!rows || rows.length === 0) {
+    console.log('[findSimilarPosts] 시트 데이터 없음')
     return []
   }
 
-  try {
-    const auth = getAuth()
-    const sheets = google.sheets({ version: 'v4', auth })
+  const results: SimilarPost[] = []
+  const queryCategory = getCategory(queryTopic)
 
-    // 기존 블로그 DB 시트에서 데이터 가져오기
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: 'blog_db!A2:F', // 시트 이름과 범위 조정 필요
-    })
+  for (const row of rows) {
+    const clinic = (row[1] || '').trim() // B열: 치과명
+    const topic = (row[2] || '').trim() // C열: 주제
+    const content = row[5] || '' // F열: 본문
 
-    const rows = response.data.values || []
-    if (rows.length === 0) return []
+    // 빈 내용 스킵
+    if (!content || content.length < 100) continue
 
-    const results: SimilarPost[] = []
-    const queryCategory = getCategory(queryTopic)
+    // 점수 계산
+    let score = 0
 
-    for (const row of rows) {
-      const clinic = row[1] || '' // B열: 치과명
-      const topic = row[2] || '' // C열: 주제
-      const content = row[5] || '' // F열: 본문
+    // 1. 카테고리 매칭
+    const rowCategory = getCategory(topic)
+    if (queryCategory && rowCategory === queryCategory) {
+      score += 0.5
+    }
 
-      // 빈 내용 스킵
-      if (!content || content.length < 100) continue
+    // 2. 주제 유사도
+    score += similarityScore(queryTopic, topic) * 0.3
 
-      // 점수 계산
-      let score = 0
-
-      // 1. 카테고리 매칭
-      const rowCategory = getCategory(topic)
-      if (queryCategory && rowCategory === queryCategory) {
-        score += 0.5
-      }
-
-      // 2. 주제 유사도
-      score += similarityScore(queryTopic, topic) * 0.3
-
-      // 3. 키워드 포함 여부
-      const queryWords = queryTopic.split(/\s+/)
-      for (const word of queryWords) {
-        if (topic.includes(word) || content.slice(0, 500).includes(word)) {
-          score += 0.1
-        }
-      }
-
-      if (score > 0.2) {
-        results.push({ clinic, topic, content, score })
+    // 3. 키워드 포함 여부
+    const queryWords = queryTopic.split(/\s+/)
+    for (const word of queryWords) {
+      if (topic.includes(word) || content.slice(0, 500).includes(word)) {
+        score += 0.1
       }
     }
 
-    // 점수 순 정렬
-    results.sort((a, b) => b.score - a.score)
-
-    return results.slice(0, topN)
-  } catch (error) {
-    console.error('Failed to fetch similar posts:', error)
-    return []
+    if (score > 0.2) {
+      results.push({ clinic, topic, content, score })
+    }
   }
+
+  // 점수 순 정렬
+  results.sort((a, b) => b.score - a.score)
+
+  return results.slice(0, topN)
 }
 
 // 패턴 분석
@@ -424,73 +438,62 @@ function analyzeTone(content: string): string[] {
   return tones.length > 0 ? tones : ['일반적']
 }
 
-// 치과명 + 주제별 글 찾기
+// 치과명 + 주제별 글 찾기 (API Key 방식)
 export async function findClinicTopicPosts(
   clinicName: string,
   topic: string,
   sheetId?: string
 ): Promise<SimilarPost[]> {
-  const spreadsheetId = sheetId || process.env.GOOGLE_SHEETS_ID
+  // API Key 방식으로 데이터 가져오기
+  const rows = await fetchSheetDataWithApiKey('Rawdata!A2:F')
 
-  if (!spreadsheetId || !process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL) {
-    console.log('Google Sheets 설정이 없습니다.')
+  if (!rows || rows.length === 0) {
+    console.log('[findClinicTopicPosts] 시트 데이터 없음')
     return []
   }
 
-  try {
-    const auth = getAuth()
-    const sheets = google.sheets({ version: 'v4', auth })
+  console.log(`[findClinicTopicPosts] ${rows.length}개 행 로드, 치과: ${clinicName}, 주제: ${topic}`)
 
-    // 블로그 DB 시트에서 데이터 가져오기
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: 'blog_db!A2:F', // A: ID, B: 치과명, C: 주제, D: 환자정보, E: 제목, F: 본문
-    })
+  const results: SimilarPost[] = []
+  const queryCategory = getCategory(topic)
 
-    const rows = response.data.values || []
-    if (rows.length === 0) return []
+  for (const row of rows) {
+    const rowClinic = (row[1] || '').trim() // B열: 치과명
+    const rowTopic = (row[2] || '').trim() // C열: 주제
+    const content = row[5] || '' // F열: 본문
 
-    const results: SimilarPost[] = []
-    const queryCategory = getCategory(topic)
+    // 빈 내용 스킵
+    if (!content || content.length < 100) continue
 
-    for (const row of rows) {
-      const rowClinic = row[1] || '' // B열: 치과명
-      const rowTopic = row[2] || '' // C열: 주제
-      const content = row[5] || '' // F열: 본문
+    // 치과명이 일치하는지 확인 (trim 적용)
+    const clinicNameTrimmed = clinicName.trim()
+    const clinicMatch = rowClinic.includes(clinicNameTrimmed) || clinicNameTrimmed.includes(rowClinic)
+    if (!clinicMatch) continue
 
-      // 빈 내용 스킵
-      if (!content || content.length < 100) continue
+    // 점수 계산
+    let score = 0.5 // 치과명 일치 기본 점수
 
-      // 치과명이 일치하는지 확인
-      const clinicMatch = rowClinic.includes(clinicName) || clinicName.includes(rowClinic)
-      if (!clinicMatch) continue
-
-      // 점수 계산
-      let score = 0.5 // 치과명 일치 기본 점수
-
-      // 1. 카테고리 매칭
-      const rowCategory = getCategory(rowTopic)
-      if (queryCategory && rowCategory === queryCategory) {
-        score += 0.3
-      }
-
-      // 2. 주제 유사도
-      score += similarityScore(topic, rowTopic) * 0.2
-
-      results.push({ clinic: rowClinic, topic: rowTopic, content, score })
+    // 1. 카테고리 매칭
+    const rowCategory = getCategory(rowTopic)
+    if (queryCategory && rowCategory === queryCategory) {
+      score += 0.3
     }
 
-    // 점수 순 정렬
-    results.sort((a, b) => b.score - a.score)
+    // 2. 주제 유사도
+    score += similarityScore(topic, rowTopic) * 0.2
 
-    return results
-  } catch (error) {
-    console.error('Failed to fetch clinic posts:', error)
-    return []
+    results.push({ clinic: rowClinic, topic: rowTopic, content, score })
   }
+
+  console.log(`[findClinicTopicPosts] ${results.length}개 매칭됨`)
+
+  // 점수 순 정렬
+  results.sort((a, b) => b.score - a.score)
+
+  return results
 }
 
-// 치과별 페르소나 추출
+// 치과별 페르소나 추출 (강화된 버전 - 모든 글 참조)
 export async function extractClinicPersona(
   clinicName: string,
   topic: string,
@@ -502,7 +505,7 @@ export async function extractClinicPersona(
     return null
   }
 
-  // 모든 글 내용 합치기 (분석용)
+  // 모든 글 내용 합치기 (분석용) - 전체 글 참조
   const allContent = posts.map(p => p.content).join('\n\n')
 
   // 스타일 분석
@@ -514,58 +517,112 @@ export async function extractClinicPersona(
     expressions: extractExpressions(allContent).transitions.slice(0, 5),
   }
 
-  // 서문 샘플 추출
-  const sampleIntros = posts.slice(0, 3).map(p => extractIntro(p.content))
+  // 서문 샘플 추출 - 더 많이 수집
+  const sampleIntros = posts.slice(0, 5).map(p => extractIntro(p.content))
 
   // 평균 길이
   const avgLength = Math.floor(
     posts.reduce((sum, p) => sum + p.content.length, 0) / posts.length
   )
 
+  // 샘플 콘텐츠 확대 - 여러 글의 핵심 부분 수집
+  let sampleContent = ''
+  for (let i = 0; i < Math.min(posts.length, 3); i++) {
+    const post = posts[i]
+    // 각 글에서 중요 부분 추출 (서문, 본문 일부, 마무리)
+    const intro = extractIntro(post.content, 5) // 서문 5문장
+    const middle = post.content.slice(
+      Math.floor(post.content.length * 0.3),
+      Math.floor(post.content.length * 0.6)
+    ) // 본문 중간 부분
+    const closing = post.content.slice(-500) // 마지막 500자
+
+    sampleContent += `\n\n### 참조 글 ${i + 1} (${post.topic})\n`
+    sampleContent += `[서문]\n${intro}\n\n`
+    sampleContent += `[본문 일부]\n${middle.slice(0, 600)}...\n\n`
+    sampleContent += `[마무리]\n${closing}\n`
+    sampleContent += `---\n`
+  }
+
   return {
     clinicName,
     topic,
     writingStyle,
     sampleIntros,
-    sampleContent: posts[0].content.slice(0, 1500), // 가장 유사한 글 샘플
+    sampleContent: sampleContent.slice(0, 5000), // 최대 5000자까지 샘플 확대
     avgLength,
     postCount: posts.length,
   }
 }
 
-// 페르소나 기반 프롬프트 생성
+// 페르소나 기반 프롬프트 생성 (강화된 버전)
 export function generatePersonaPrompt(persona: ClinicPersona): string {
+  // 문단 길이 분석
+  const paragraphs = persona.sampleContent.split('\n\n').filter(p => p.trim().length > 50)
+  const avgParagraphLength = paragraphs.length > 0
+    ? Math.floor(paragraphs.reduce((sum, p) => sum + p.length, 0) / paragraphs.length)
+    : 100
+
   return `
-## 🎭 ${persona.clinicName} 전용 글쓰기 스타일
+## 🎭 ${persona.clinicName} 글쓰기 스타일 (⚠️ 필수 준수!!)
 
-이 치과에서 기존에 작성한 ${persona.postCount}개의 "${persona.topic}" 관련 글을 분석한 결과입니다.
-**반드시 아래 스타일을 따라 글을 작성하세요.**
+### ⚠️⚠️ 매우 중요: 아래 스타일을 정확히 따라 작성하세요! ⚠️⚠️
 
-### 어조 특징
-${persona.writingStyle.tone.map(t => `- ${t}`).join('\n')}
-
-### 자주 사용하는 어미
-${persona.writingStyle.endings.length > 0
-  ? persona.writingStyle.endings.map(e => `"${e}"`).join(', ')
-  : '~인데요, ~거든요, ~해요 (기본 구어체)'}
-
-### 인사말 패턴 참조
-${persona.writingStyle.greetings.slice(0, 2).map(g => `- "${g}"`).join('\n') || '- 기본 인사말 사용'}
-
-### 마무리 패턴 참조
-${persona.writingStyle.closings.slice(0, 2).map(c => `- "${c}"`).join('\n') || '- 기본 마무리 사용'}
-
-### 서문 스타일 샘플
-\`\`\`
-${persona.sampleIntros[0] || '샘플 없음'}
-\`\`\`
-
-### 참고 본문 (스타일 참조용)
-\`\`\`
-${persona.sampleContent.slice(0, 800)}...
-\`\`\`
+**분석된 기존 글**: ${persona.postCount}개
+**평균 글 길이**: ${persona.avgLength}자 (이 길이에 맞춰 작성!)
+**평균 문단 길이**: ${avgParagraphLength}자
 
 ---
-⚠️ 위 스타일을 참고하되, 내용은 새롭게 작성하세요. 표절하지 마세요!
+
+### 1. 어조 & 말투 특징 (반드시 적용!)
+${persona.writingStyle.tone.map(t => `✓ ${t}`).join('\n')}
+
+### 2. 자주 사용하는 어미 (반드시 사용!)
+${persona.writingStyle.endings.length > 0
+  ? persona.writingStyle.endings.map(e => `- "${e}"`).join('\n')
+  : '- "~인데요"\n- "~거든요"\n- "~해요"'}
+
+⚠️ 위 어미들을 글 전체에 자연스럽게 분배하여 사용하세요!
+
+### 3. 인사말 패턴 (서문 첫 문장에 반드시 적용!)
+${persona.writingStyle.greetings.length > 0
+  ? persona.writingStyle.greetings.slice(0, 3).map((g, i) => `${i + 1}. "${g}"`).join('\n')
+  : '1. "안녕하세요, [치과명] [원장님]입니다."'}
+
+### 4. 마무리 패턴 (결(結) 섹션에 반드시 적용!)
+${persona.writingStyle.closings.length > 0
+  ? persona.writingStyle.closings.slice(0, 3).map((c, i) => `${i + 1}. "${c}"`).join('\n')
+  : '1. "[치과명] [원장님]이었습니다. 감사합니다."'}
+
+### 5. 서문 샘플 모음 (기(起) 섹션 작성 시 참고)
+${persona.sampleIntros.slice(0, 3).map((intro, i) => `
+**서문 샘플 ${i + 1}:**
+\`\`\`
+${intro}
+\`\`\`
+`).join('\n')}
+
+---
+
+## 📖 기존 글 전체 참조 (⚠️ 반드시 스타일 학습!)
+
+아래는 ${persona.clinicName}에서 작성한 ${persona.postCount}개의 기존 글입니다.
+**구조, 문장 길이, 어미 패턴, 이모지 사용법, 설명 방식**을 철저히 분석하고 동일한 스타일로 작성하세요!
+
+${persona.sampleContent}
+
+---
+
+## ⚠️ 스타일 적용 체크리스트
+
+새 글 작성 전, 반드시 확인하세요:
+☐ 인사말이 기존 글 패턴과 일치하는가?
+☐ 어미 패턴(~인데요, ~거든요, ~해요 등)을 적용했는가?
+☐ 문단 길이가 기존 글과 비슷한가? (평균 ${avgParagraphLength}자)
+☐ 전체 글 길이가 기존 글과 비슷한가? (평균 ${persona.avgLength}자)
+☐ 마무리 패턴이 기존 글과 일치하는가?
+
+⚠️ 내용은 새롭게 작성하되, 글의 "느낌/톤/스타일"은 기존 글과 동일해야 합니다!
+⚠️ 복사/표절은 금지! 스타일만 철저히 모방하세요!
 `
 }

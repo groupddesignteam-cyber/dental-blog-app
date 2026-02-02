@@ -20,14 +20,14 @@ export const TITLE_RULES = {
   ],
 }
 
-// 본문 작성 규칙
+// 본문 작성 규칙 (해시태그 제외 기준)
 export const CONTENT_RULES = {
-  totalLength: { min: 1400, max: 1600 }, // 공백 제외 약 1500자
-  totalLengthWithSpaces: { min: 1700, max: 1900 }, // 공백 포함 시
+  totalLength: { min: 1700, max: 1900 }, // 해시태그 제외, 공백 제외 약 1800자 ±100
+  totalLengthWithSpaces: { min: 2000, max: 2300 }, // 공백 포함 시
   lineLength: 40, // 한 줄 40자 내외
   paragraphLines: { min: 3, max: 5 },
   keywordDensity: { min: 2, max: 3 }, // 퍼센트
-  mainKeywordCount: { min: 4, max: 6 }, // 글자수 감소에 맞춤
+  mainKeywordCount: { min: 5, max: 7 }, // 메인 키워드 5~7회
   subKeywordCount: { min: 2, max: 3 },
   imageCount: { min: 2, max: 4 },
 }

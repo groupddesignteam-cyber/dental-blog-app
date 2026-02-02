@@ -1,7 +1,14 @@
 // Google Sheets 데이터 가져오기 (API 키 방식)
 
+export interface ClinicDetail {
+  name: string
+  region: string
+  doctorName: string
+}
+
 export interface SheetData {
   clinics: string[]
+  clinicDetails: ClinicDetail[]
   treatments: string[]
 }
 
@@ -12,12 +19,13 @@ export async function getSheetData(): Promise<SheetData> {
 
   if (!sheetId || !apiKey) {
     console.log('Google Sheets 설정이 없습니다.')
-    return { clinics: [], treatments: [] }
+    return { clinics: [], clinicDetails: [], treatments: [] }
   }
 
   try {
     // Google Sheets API v4 - 공개 시트 읽기
-    const range = 'A2:C' // A열부터 C열까지
+    // A:날짜, B:치과명, C:치료, D:지역, E:원장님
+    const range = 'A2:E'
     const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${range}?key=${apiKey}`
 
     const response = await fetch(url, {
@@ -34,24 +42,36 @@ export async function getSheetData(): Promise<SheetData> {
     const data = await response.json()
     const rows = data.values || []
 
-    // B열: 치과명, C열: 치료
-    const clinicsSet = new Set<string>()
+    // 치과 상세정보 맵 (중복 제거용)
+    const clinicMap = new Map<string, ClinicDetail>()
     const treatmentsSet = new Set<string>()
 
     for (const row of rows) {
-      const clinic = row[1]?.trim() // B열
-      const treatment = row[2]?.trim() // C열
+      const clinic = row[1]?.trim() // B열: 치과명
+      const treatment = row[2]?.trim() // C열: 치료
+      const region = row[3]?.trim() || '' // D열: 지역
+      const doctorName = row[4]?.trim() || '' // E열: 원장님
 
-      if (clinic) clinicsSet.add(clinic)
       if (treatment) treatmentsSet.add(treatment)
+
+      if (clinic && !clinicMap.has(clinic)) {
+        clinicMap.set(clinic, {
+          name: clinic,
+          region,
+          doctorName,
+        })
+      }
     }
 
+    const clinicDetails = Array.from(clinicMap.values()).sort((a, b) => a.name.localeCompare(b.name))
+
     return {
-      clinics: Array.from(clinicsSet).sort(),
+      clinics: clinicDetails.map(c => c.name),
+      clinicDetails,
       treatments: Array.from(treatmentsSet).sort(),
     }
   } catch (error) {
     console.error('Failed to fetch sheet data:', error)
-    return { clinics: [], treatments: [] }
+    return { clinics: [], clinicDetails: [], treatments: [] }
   }
 }

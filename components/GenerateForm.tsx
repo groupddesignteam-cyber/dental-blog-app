@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { GenerateFormData, UploadedImage, KeywordAnalysisState } from '@/types'
+import { GenerateFormData, UploadedImage, KeywordAnalysisState, WritingMode } from '@/types'
 
 interface Props {
   onSubmit: (data: GenerateFormData) => void
@@ -17,6 +17,13 @@ const LLM_MODELS = [
   { id: 'claude', name: 'Claude Sonnet', description: '고품질 한국어 글쓰기' },
   { id: 'openai', name: 'GPT-4o', description: '고품질 + 높은 비용' },
 ] as const
+
+// 글쓰기 모드 옵션
+const WRITING_MODES: Array<{ id: WritingMode | undefined; name: string; description: string; icon: string }> = [
+  { id: undefined, name: '기본 모드', description: '치과별 페르소나 자동 적용', icon: '🏥' },
+  { id: 'expert', name: '전문가 모드', description: '의학적 정확성, 신뢰감 있는 전문적 글', icon: '🎓' },
+  { id: 'informative', name: '정보성 모드', description: '재미있고 이해하기 쉬운 친근한 글', icon: '📚' },
+]
 
 // 기본 치료 목록 (시트에서 못 가져올 경우)
 const DEFAULT_TREATMENTS = [
@@ -204,6 +211,7 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
     treatment: '',
     photoDescription: '',
     model: 'claude-haiku',
+    writingMode: undefined, // 기본 모드 (페르소나 자동 적용)
   })
 
   // 시트 데이터 가져오기
@@ -428,6 +436,39 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
             </label>
           ))}
         </div>
+      </div>
+
+      {/* 글쓰기 모드 선택 */}
+      <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">✍️ 글쓰기 스타일</h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          {WRITING_MODES.map((mode) => (
+            <label
+              key={mode.id || 'default'}
+              className={`relative flex flex-col p-4 cursor-pointer rounded-xl border-2 transition-all ${formData.writingMode === mode.id
+                  ? 'border-primary-500 bg-primary-50'
+                  : 'border-gray-200 hover:border-gray-300'
+                }`}
+            >
+              <input
+                type="radio"
+                name="writingMode"
+                value={mode.id || ''}
+                checked={formData.writingMode === mode.id}
+                onChange={() => setFormData(prev => ({ ...prev, writingMode: mode.id }))}
+                className="sr-only"
+              />
+              <span className="font-medium text-gray-900">{mode.icon} {mode.name}</span>
+              <span className="text-xs text-gray-500 mt-1">{mode.description}</span>
+              {formData.writingMode === mode.id && (
+                <span className="absolute top-2 right-2 text-primary-500">✓</span>
+              )}
+            </label>
+          ))}
+        </div>
+        <p className="mt-3 text-xs text-gray-500">
+          💡 기본 모드: 시트에 저장된 기존 글 스타일을 자동으로 참조합니다.
+        </p>
       </div>
 
       {/* 치과 정보 */}
