@@ -9,13 +9,8 @@ interface Props {
 }
 
 const LLM_MODELS = [
-  // 💰 저비용 모델 (권장)
-  { id: 'claude-haiku', name: 'Claude Haiku 💰', description: '빠름 + 저비용 (추천)' },
-  { id: 'openai-mini', name: 'GPT-4o-mini 💰', description: '빠름 + 저비용' },
-  { id: 'gemini', name: 'Gemini Pro', description: '무료 + 빠른 응답' },
-  // 🎯 고품질 모델
-  { id: 'claude', name: 'Claude Sonnet', description: '고품질 한국어 글쓰기' },
-  { id: 'openai', name: 'GPT-4o', description: '고품질 + 높은 비용' },
+  { id: 'claude', name: 'Claude Sonnet', description: '고품질 한국어 글쓰기 (추천)', icon: '🎯' },
+  { id: 'gemini', name: 'Gemini Pro', description: '빠른 응답 + 무료', icon: '⚡' },
 ] as const
 
 // 글쓰기 모드 옵션
@@ -210,7 +205,7 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
     patientInfo: '',
     treatment: '',
     photoDescription: '',
-    model: 'claude-haiku',
+    model: 'claude',
     writingMode: undefined, // 기본 모드 (페르소나 자동 적용)
   })
 
@@ -411,13 +406,13 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
       {/* AI 모델 선택 */}
       <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">🤖 AI 모델 선택</h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {LLM_MODELS.map((model) => (
             <label
               key={model.id}
-              className={`relative flex flex-col p-4 cursor-pointer rounded-xl border-2 transition-all ${formData.model === model.id
-                  ? 'border-primary-500 bg-primary-50'
-                  : 'border-gray-200 hover:border-gray-300'
+              className={`relative flex flex-col p-5 cursor-pointer rounded-xl border-2 transition-all ${formData.model === model.id
+                  ? 'border-primary-500 bg-primary-50 shadow-md'
+                  : 'border-gray-200 hover:border-gray-300 hover:shadow-sm'
                 }`}
             >
               <input
@@ -428,10 +423,10 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
                 onChange={handleChange}
                 className="sr-only"
               />
-              <span className="font-medium text-gray-900">{model.name}</span>
-              <span className="text-xs text-gray-500 mt-1">{model.description}</span>
+              <span className="font-semibold text-gray-900 text-lg">{model.icon} {model.name}</span>
+              <span className="text-sm text-gray-500 mt-1">{model.description}</span>
               {formData.model === model.id && (
-                <span className="absolute top-2 right-2 text-primary-500">✓</span>
+                <span className="absolute top-3 right-3 text-primary-500 text-xl">✓</span>
               )}
             </label>
           ))}
