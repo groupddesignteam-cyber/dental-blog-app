@@ -46,13 +46,10 @@ const TREATMENTS = [
   '틀니',
 ]
 
-// LLM 모델 옵션
+// LLM 모델 옵션 (2개만)
 const LLM_MODELS = [
-  { id: 'gemini', name: 'Gemini Pro 💰', description: '무료 + 빠름 (권장)' },
-  { id: 'claude-haiku', name: 'Claude Haiku', description: '빠름 + 저비용' },
-  { id: 'openai-mini', name: 'GPT-4o-mini', description: '빠름 + 저비용' },
-  { id: 'claude', name: 'Claude Sonnet', description: '고품질' },
-  { id: 'openai', name: 'GPT-4o', description: '고품질 + 고비용' },
+  { id: 'claude', name: 'Claude Sonnet 🎯', description: '고품질 한국어 글쓰기 (추천)' },
+  { id: 'gemini', name: 'Gemini Pro ⚡', description: '빠른 응답 + 무료' },
 ] as const
 
 // 이미지 태그 옵션
@@ -204,8 +201,8 @@ export default function BatchQueue({ onResultsReady }: Props) {
     other: [],
   })
 
-  // 모델 선택
-  const [model, setModel] = useState<LLMModel>('gemini')
+  // 모델 선택 (기본: Claude Sonnet)
+  const [model, setModel] = useState<LLMModel>('claude')
 
   // 케이스 큐
   const [cases, setCases] = useState<BlogCase[]>([])
