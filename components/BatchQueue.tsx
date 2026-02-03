@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { LLMModel, GenerateResult, UploadedImage, ImageTag } from '@/types'
+import { LLMModel, GenerateResult, UploadedImage, ImageTag, WritingMode } from '@/types'
 
 // 케이스 타입
 interface BlogCase {
@@ -50,6 +50,22 @@ const TREATMENTS = [
 const LLM_MODELS = [
   { id: 'claude', name: 'Claude Sonnet 🎯', description: '고품질 한국어 글쓰기 (추천)' },
   { id: 'gemini', name: 'Gemini Pro ⚡', description: '빠른 응답 + 무료' },
+] as const
+
+// 포스팅 모드 옵션
+const POSTING_MODES = [
+  {
+    id: 'expert' as WritingMode,
+    name: '🏥 임상 포스팅',
+    description: '사진 판독 기반 · 전문 용어 + 해설 · 문어체',
+    details: ['임상 소견 중심', '전문적 신뢰감']
+  },
+  {
+    id: 'informative' as WritingMode,
+    name: '📚 정보성 포스팅',
+    description: '일반인 눈높이 · 쉬운 비유 · 친근한 구어체',
+    details: ['궁금증 해결 중심', '이해하기 쉬운']
+  },
 ] as const
 
 // 이미지 태그 옵션
@@ -203,6 +219,9 @@ export default function BatchQueue({ onResultsReady }: Props) {
 
   // 모델 선택 (기본: Claude Sonnet)
   const [model, setModel] = useState<LLMModel>('claude')
+
+  // 포스팅 모드 선택 (기본: 임상 포스팅)
+  const [postingMode, setPostingMode] = useState<WritingMode>('expert')
 
   // 케이스 큐
   const [cases, setCases] = useState<BlogCase[]>([])
@@ -507,6 +526,7 @@ export default function BatchQueue({ onResultsReady }: Props) {
         patientInfo: caseItem.memo || '일반 환자',
         treatment: `${caseItem.topic} 치료`,
         model,
+        writingMode: postingMode,
         images: caseItem.images?.map((img, i) => ({
           name: buildImageNameWithTag(img, i),
           tag: img.tag,
@@ -943,6 +963,42 @@ export default function BatchQueue({ onResultsReady }: Props) {
               }`}
             >
               {m.name}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* 포스팅 모드 선택 */}
+      <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
+        <h3 className="text-sm font-medium text-gray-700 mb-3">✍️ 포스팅 모드</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {POSTING_MODES.map((mode) => (
+            <button
+              key={mode.id}
+              type="button"
+              onClick={() => setPostingMode(mode.id)}
+              className={`p-4 rounded-xl text-left transition-all border-2 ${
+                postingMode === mode.id
+                  ? 'border-primary-500 bg-primary-50'
+                  : 'border-gray-200 bg-gray-50 hover:border-gray-300 hover:bg-gray-100'
+              }`}
+            >
+              <div className="font-semibold text-gray-900 mb-1">{mode.name}</div>
+              <div className="text-xs text-gray-600 mb-2">{mode.description}</div>
+              <div className="flex flex-wrap gap-1">
+                {mode.details.map((detail, i) => (
+                  <span
+                    key={i}
+                    className={`text-xs px-2 py-0.5 rounded-full ${
+                      postingMode === mode.id
+                        ? 'bg-primary-100 text-primary-700'
+                        : 'bg-gray-200 text-gray-600'
+                    }`}
+                  >
+                    {detail}
+                  </span>
+                ))}
+              </div>
             </button>
           ))}
         </div>
