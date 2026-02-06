@@ -92,13 +92,28 @@ export const SEASON_DATA: Record<number, SeasonData> = {
   },
 }
 
+// 주제-연령대 매칭: 젊은층 훅 키워드 (임플란트/보철 등 중장년 주제에서 제외)
+const YOUNG_KEYWORDS = ['졸업', '입학', '새 학기', '교정', '수능', '수험생', '방학', '학생', '어린이', '아이 충치']
+// 중장년 이상 대상 주제
+const SENIOR_TOPICS = ['임플란트', '뼈이식', '골이식', '틀니', '보철', '크라운', '브릿지', '치주', '잇몸', '발치']
+
 // 현재 월에 맞는 시즌 훅 가져오기
 export function getSeasonHook(topic?: string): string {
   const month = new Date().getMonth() + 1
   const seasonData = SEASON_DATA[month] || SEASON_DATA[1]
 
-  // 주제와 관련된 훅이 있으면 우선 선택 (나중에 로직 추가 가능)
-  const hooks = seasonData.hooks
+  let hooks = seasonData.hooks
+
+  // 중장년 주제인 경우 젊은층 관련 훅 제외
+  if (topic && SENIOR_TOPICS.some(t => topic.includes(t))) {
+    const filtered = hooks.filter(hook =>
+      !YOUNG_KEYWORDS.some(keyword => hook.includes(keyword))
+    )
+    if (filtered.length > 0) {
+      hooks = filtered
+    }
+  }
+
   return hooks[Math.floor(Math.random() * hooks.length)]
 }
 
