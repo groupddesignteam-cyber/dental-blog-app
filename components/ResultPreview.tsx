@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { GenerateResult } from '@/types'
+import { formatLineBreaks } from '@/lib/line-formatter'
 
 interface Props {
   result: GenerateResult | null
@@ -12,7 +13,7 @@ interface Props {
 
 export default function ResultPreview({ result, isStreaming, streamContent }: Props) {
   const [copied, setCopied] = useState(false)
-  const [activeTab, setActiveTab] = useState<'preview' | 'markdown' | 'html'>('preview')
+  const [activeTab, setActiveTab] = useState<'preview' | 'markdown' | 'html' | 'naver'>('preview')
 
   const content = result?.content || streamContent
 
@@ -33,6 +34,16 @@ export default function ResultPreview({ result, isStreaming, streamContent }: Pr
       .replace(/\*(.*?)\*/g, '<i>$1</i>')
       .replace(/\n\n/g, '<br><br>')
       .replace(/\n/g, '<br>')
+  }
+
+  // 네이버 블로그용 44byte 줄바꿈 포맷
+  const convertToNaver = (markdown: string) => {
+    // 마크다운 문법 제거 + 44byte 줄바꿈
+    const plain = markdown
+      .replace(/^#{1,3}\s*/gm, '')       // 헤더 마크업 제거
+      .replace(/\*\*(.*?)\*\*/g, '$1')   // 볼드 제거
+      .replace(/\*(.*?)\*/g, '$1')       // 이탤릭 제거
+    return formatLineBreaks(plain)
   }
 
   if (!content && !isStreaming) {
@@ -63,7 +74,7 @@ export default function ResultPreview({ result, isStreaming, streamContent }: Pr
 
         {/* 탭 */}
         <div className="flex gap-2 mt-4">
-          {(['preview', 'markdown', 'html'] as const).map((tab) => (
+          {(['preview', 'markdown', 'html', 'naver'] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -76,6 +87,7 @@ export default function ResultPreview({ result, isStreaming, streamContent }: Pr
               {tab === 'preview' && '미리보기'}
               {tab === 'markdown' && '마크다운'}
               {tab === 'html' && 'HTML'}
+              {tab === 'naver' && '네이버'}
             </button>
           ))}
         </div>
@@ -99,6 +111,15 @@ export default function ResultPreview({ result, isStreaming, streamContent }: Pr
           <pre className="whitespace-pre-wrap text-sm font-mono bg-gray-50 p-4 rounded-lg">
             {convertToHtml(content)}
           </pre>
+        )}
+
+        {activeTab === 'naver' && (
+          <div>
+            <p className="text-xs text-gray-500 mb-2">44byte(한글 22자) 줄바꿈 적용 - 네이버 블로그 붙여넣기용</p>
+            <pre className="whitespace-pre-wrap text-sm font-mono bg-green-50 p-4 rounded-lg leading-relaxed">
+              {convertToNaver(content)}
+            </pre>
+          </div>
         )}
       </div>
 
@@ -142,6 +163,12 @@ export default function ResultPreview({ result, isStreaming, streamContent }: Pr
               className="flex-1 py-2 px-4 bg-gray-100 text-gray-700 font-medium rounded-lg hover:bg-gray-200 transition-colors"
             >
               🌐 HTML 복사
+            </button>
+            <button
+              onClick={() => handleCopy(convertToNaver(content))}
+              className="flex-1 py-2 px-4 bg-green-100 text-green-700 font-medium rounded-lg hover:bg-green-200 transition-colors"
+            >
+              📗 네이버용 복사
             </button>
           </div>
         </div>

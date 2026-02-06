@@ -337,7 +337,10 @@ export interface ClinicPersona {
   topic: string
   writingStyle: {
     tone: string[]           // 어조 특징 (예: 다정함, 전문적, 친근함)
-    endings: string[]        // 자주 쓰는 어미 (예: ~인데요, ~거든요)
+    endings: {
+      formal: string[]       // 문어체 어미 (예: ~입니다, ~됩니다)
+      colloquial: string[]   // 구어체 어미 (참고용, 예: ~인데요, ~거든요)
+    }
     greetings: string[]      // 인사말 패턴
     closings: string[]       // 마무리 패턴
     expressions: string[]    // 자주 쓰는 표현
@@ -348,32 +351,44 @@ export interface ClinicPersona {
   postCount: number
 }
 
-// 어미 추출
-function extractEndings(content: string): string[] {
-  const endings: string[] = []
+// 어미 추출 (문어체/구어체 분류)
+function extractEndings(content: string): { formal: string[], colloquial: string[] } {
+  const formal: string[] = []
+  const colloquial: string[] = []
 
-  // 구어체 어미 패턴
-  const endingPatterns = [
-    /\~인데요[.?!]?/g,
-    /\~거든요[.?!]?/g,
-    /\~하죠[.?!]?/g,
-    /\~드려요[.?!]?/g,
-    /\~해요[.?!]?/g,
-    /\~이에요[.?!]?/g,
-    /\~예요[.?!]?/g,
-    /\~세요[.?!]?/g,
-    /\~습니다[.?!]?/g,
-    /\~됩니다[.?!]?/g,
+  // 문어체 어미 (우선 - ~다 체)
+  const formalPatterns = [
+    { pattern: /입니다/g, label: '~입니다' },
+    { pattern: /됩니다/g, label: '~됩니다' },
+    { pattern: /있습니다/g, label: '~있습니다' },
+    { pattern: /겠습니다/g, label: '~겠습니다' },
+    { pattern: /바랍니다/g, label: '~바랍니다' },
+    { pattern: /습니다/g, label: '~습니다' },
+    { pattern: /하죠/g, label: '~하죠' },
   ]
 
-  for (const pattern of endingPatterns) {
-    const matches = content.match(pattern) || []
-    if (matches.length >= 2 && matches[0]) { // 2번 이상 사용된 어미만
-      endings.push(matches[0].replace(/[.?!]/g, ''))
-    }
+  // 구어체 어미 (참고용 - ~요 체)
+  const colloquialPatterns = [
+    { pattern: /인데요/g, label: '~인데요' },
+    { pattern: /거든요/g, label: '~거든요' },
+    { pattern: /해요/g, label: '~해요' },
+    { pattern: /드려요/g, label: '~드려요' },
+    { pattern: /이에요/g, label: '~이에요' },
+    { pattern: /예요/g, label: '~예요' },
+    { pattern: /세요/g, label: '~세요' },
+  ]
+
+  for (const { pattern, label } of formalPatterns) {
+    if ((content.match(pattern) || []).length >= 2) formal.push(label)
+  }
+  for (const { pattern, label } of colloquialPatterns) {
+    if ((content.match(pattern) || []).length >= 2) colloquial.push(label)
   }
 
-  return [...new Set(endings)]
+  return {
+    formal: [...new Set(formal)],
+    colloquial: [...new Set(colloquial)],
+  }
 }
 
 // 인사말 추출
@@ -564,37 +579,35 @@ export function generatePersonaPrompt(persona: ClinicPersona): string {
     : 100
 
   return `
-## 🎭 ${persona.clinicName} 글쓰기 스타일 (⚠️ 필수 준수!!)
-
-### ⚠️⚠️ 매우 중요: 아래 스타일을 정확히 따라 작성하세요! ⚠️⚠️
+## 🎭 ${persona.clinicName} 글쓰기 스타일 참조
 
 **분석된 기존 글**: ${persona.postCount}개
-**평균 글 길이**: ${persona.avgLength}자 (이 길이에 맞춰 작성!)
+**평균 글 길이**: ${persona.avgLength}자
 **평균 문단 길이**: ${avgParagraphLength}자
 
 ---
 
-### 1. 어조 & 말투 특징 (반드시 적용!)
+### 1. 어조 & 말투 특징
 ${persona.writingStyle.tone.map(t => `✓ ${t}`).join('\n')}
 
-### 2. 자주 사용하는 어미 (반드시 사용!)
-${persona.writingStyle.endings.length > 0
-  ? persona.writingStyle.endings.map(e => `- "${e}"`).join('\n')
-  : '- "~인데요"\n- "~거든요"\n- "~해요"'}
+### 2. 기존 글에서 발견된 어미 패턴 (참고만!)
+- 문어체: ${persona.writingStyle.endings.formal.length > 0 ? persona.writingStyle.endings.formal.join(', ') : '없음'}
+- 구어체: ${persona.writingStyle.endings.colloquial.length > 0 ? persona.writingStyle.endings.colloquial.join(', ') : '없음'}
 
-⚠️ 위 어미들을 글 전체에 자연스럽게 분배하여 사용하세요!
+⚠️ **중요**: 어미 스타일은 위 패턴이 아닌, 아래 "글쓰기 모드"의 어미 규칙을 따르세요!
+기존 글에서 ~해요, ~거든요 등 구어체가 발견되더라도, 글쓰기 모드가 금지하면 사용하지 마세요.
 
-### 3. 인사말 패턴 (서문 첫 문장에 반드시 적용!)
+### 3. 인사말 패턴 (서문 참고)
 ${persona.writingStyle.greetings.length > 0
   ? persona.writingStyle.greetings.slice(0, 3).map((g, i) => `${i + 1}. "${g}"`).join('\n')
   : '1. "안녕하세요, [치과명] [원장님]입니다."'}
 
-### 4. 마무리 패턴 (결(結) 섹션에 반드시 적용!)
+### 4. 마무리 패턴 (결(結) 참고)
 ${persona.writingStyle.closings.length > 0
   ? persona.writingStyle.closings.slice(0, 3).map((c, i) => `${i + 1}. "${c}"`).join('\n')
   : '1. "[치과명] [원장님]이었습니다. 감사합니다."'}
 
-### 5. 서문 샘플 모음 (기(起) 섹션 작성 시 참고)
+### 5. 서문 샘플 (구조 참고, 어미는 글쓰기 모드 따를 것)
 ${persona.sampleIntros.slice(0, 3).map((intro, i) => `
 **서문 샘플 ${i + 1}:**
 \`\`\`
@@ -604,10 +617,11 @@ ${intro}
 
 ---
 
-## 📖 기존 글 전체 참조 (⚠️ 반드시 스타일 학습!)
+## 📖 기존 글 참조 (구조/흐름 참고, 어미는 글쓰기 모드 우선!)
 
-아래는 ${persona.clinicName}에서 작성한 ${persona.postCount}개의 기존 글입니다.
-**구조, 문장 길이, 어미 패턴, 이모지 사용법, 설명 방식**을 철저히 분석하고 동일한 스타일로 작성하세요!
+아래는 ${persona.clinicName}의 기존 글입니다.
+**글의 구조, 문장 길이, 이모지 사용법, 설명 방식**을 참고하되,
+**어미(~요/~다)**는 반드시 글쓰기 모드의 규칙을 따르세요!
 
 ${persona.sampleContent}
 
@@ -615,14 +629,12 @@ ${persona.sampleContent}
 
 ## ⚠️ 스타일 적용 체크리스트
 
-새 글 작성 전, 반드시 확인하세요:
-☐ 인사말이 기존 글 패턴과 일치하는가?
-☐ 어미 패턴(~인데요, ~거든요, ~해요 등)을 적용했는가?
+☐ 인사말 구조가 기존 글과 유사한가?
 ☐ 문단 길이가 기존 글과 비슷한가? (평균 ${avgParagraphLength}자)
 ☐ 전체 글 길이가 기존 글과 비슷한가? (평균 ${persona.avgLength}자)
-☐ 마무리 패턴이 기존 글과 일치하는가?
+☐ 마무리 구조가 기존 글과 유사한가?
+☐ **어미는 글쓰기 모드(임상/정보성) 규칙을 따랐는가?** ← 최우선!
 
-⚠️ 내용은 새롭게 작성하되, 글의 "느낌/톤/스타일"은 기존 글과 동일해야 합니다!
-⚠️ 복사/표절은 금지! 스타일만 철저히 모방하세요!
+⚠️ 내용은 새롭게 작성! 복사/표절 금지!
 `
 }

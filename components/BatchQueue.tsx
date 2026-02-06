@@ -1046,14 +1046,14 @@ export default function BatchQueue({ onResultsReady }: Props) {
           {/* 메모 */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              메모 (선택)
+              CC / 메모 (선택)
             </label>
-            <input
-              type="text"
+            <textarea
               value={memo}
               onChange={(e) => setMemo(e.target.value)}
-              placeholder="예: 50대 남성, 어금니"
-              className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500"
+              rows={4}
+              placeholder={"예:\n#36 치근단 병소 관찰\n저작 시 통증 호소\n골이식 후 임플란트 식립 예정"}
+              className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 resize-y"
             />
           </div>
         </div>
