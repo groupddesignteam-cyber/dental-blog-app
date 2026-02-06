@@ -451,44 +451,129 @@ function sanitizeFormData(data: GenerateFormData): GenerateFormData {
   }
 }
 
-// 이미지 파일명에서 배치 힌트 추출
-function analyzeImageNames(imageNames: string[]): string {
+// 이미지 파일명에서 임상 정보 추출 + 배치 힌트 생성
+function analyzeImageNames(imageNames: string[], writingMode?: WritingMode): string {
   if (!imageNames || imageNames.length === 0) return ''
 
-  const analyzed = imageNames.map((name, index) => {
-    const lower = name.toLowerCase()
-    let hint = ''
+  // 치과 임상 키워드 사전 (파일명에서 소견 유추용)
+  const clinicalKeywords: Record<string, string> = {
+    // 부위
+    '상악': '상악(위턱)', '하악': '하악(아래턱)',
+    '전치': '전치부(앞니)', '구치': '구치부(어금니)', '대구치': '대구치(큰어금니)',
+    '소구치': '소구치(작은어금니)', '좌측': '좌측', '우측': '우측',
+    // 소견
+    '치근단': '치근단 병소(치아 뿌리 끝 염증)',
+    '골흡수': '골흡수(치조골 소실)',
+    '골이식': '골이식(뼈 보충 시술)',
+    '뼈이식': '골이식(뼈 보충 시술)',
+    '파절': '치아 파절(깨짐)',
+    '우식': '치아 우식(충치)',
+    '충치': '치아 우식(충치)',
+    '염증': '염증 소견',
+    '농양': '농양(고름집)',
+    '낭종': '낭종(물혹)',
+    '매복': '매복(잇몸 속에 묻힌 상태)',
+    '치주': '치주질환(잇몸병)',
+    '발적': '발적(붉어짐)',
+    '부종': '부종(부기)',
+    // 치료
+    '임플란트': '임플란트 식립',
+    '식립': '임플란트 식립',
+    '픽스쳐': '임플란트 픽스쳐(인공 뿌리)',
+    '크라운': '보철 크라운(씌우기)',
+    '보철': '보철 수복',
+    '발치': '발치(치아 뽑기)',
+    '근관': '근관치료(신경치료)',
+    '신경치료': '근관치료(신경치료)',
+    '스케일링': '스케일링(치석 제거)',
+    '교정': '교정치료',
+    '레진': '레진 수복',
+    '인레이': '인레이 수복',
+    // 시점
+    'before': '치료 전', '치료전': '치료 전',
+    'after': '치료 후', '치료후': '치료 후',
+    '경과': '치료 경과', '과정': '치료 과정', '진행': '치료 진행',
+    // 촬영 유형
+    'xray': 'X-ray 촬영', 'x-ray': 'X-ray 촬영', '엑스레이': 'X-ray 촬영',
+    'ct': 'CT 촬영', '씨티': 'CT 촬영', 'cbct': 'CBCT 촬영',
+    '파노라마': '파노라마 촬영', '구내': '구내 사진', '구외': '구외 사진',
+  }
 
-    if (lower.includes('before') || lower.includes('전') || lower.includes('치료전')) {
-      hint = '치료 전 상태'
-    } else if (lower.includes('after') || lower.includes('후') || lower.includes('치료후')) {
-      hint = '치료 후 상태'
-    } else if (lower.includes('xray') || lower.includes('x-ray') || lower.includes('엑스레이')) {
-      hint = 'X-ray 사진'
-    } else if (lower.includes('ct') || lower.includes('씨티')) {
-      hint = 'CT 사진'
-    } else if (lower.includes('과정') || lower.includes('진행')) {
-      hint = '치료 과정'
-    } else {
-      hint = '참고 이미지'
+  const analyzed = imageNames.map((name, index) => {
+    // 확장자 제거 후 구분자로 분리
+    const nameWithoutExt = name.replace(/\.[^.]+$/, '')
+    const tokens = nameWithoutExt.split(/[_\-\s.]+/)
+
+    // 파일명에서 임상 키워드 매칭
+    const foundClinical: string[] = []
+    const foundTiming: string[] = []
+    const foundType: string[] = []
+    const toothNumbers: string[] = []
+
+    for (const token of tokens) {
+      const lower = token.toLowerCase()
+
+      // 치식 번호 (#11, #36, 36번 등)
+      const toothMatch = token.match(/^#?(\d{2})번?$/)
+      if (toothMatch) {
+        toothNumbers.push(`#${toothMatch[1]}`)
+        continue
+      }
+
+      // 키워드 매칭
+      for (const [keyword, description] of Object.entries(clinicalKeywords)) {
+        if (lower.includes(keyword.toLowerCase())) {
+          if (['치료 전', '치료 후', '치료 경과', '치료 과정', '치료 진행'].includes(description)) {
+            if (!foundTiming.includes(description)) foundTiming.push(description)
+          } else if (description.includes('촬영') || description.includes('사진')) {
+            if (!foundType.includes(description)) foundType.push(description)
+          } else {
+            if (!foundClinical.includes(description)) foundClinical.push(description)
+          }
+        }
+      }
     }
 
-    return `${index + 1}. ${name} → ${hint}`
+    // 분석 결과 조합
+    let analysis = `${index + 1}. **파일명**: ${name}\n`
+    if (toothNumbers.length > 0) analysis += `   - 부위: ${toothNumbers.join(', ')}\n`
+    if (foundClinical.length > 0) analysis += `   - 임상 정보: ${foundClinical.join(', ')}\n`
+    if (foundType.length > 0) analysis += `   - 촬영 유형: ${foundType.join(', ')}\n`
+    if (foundTiming.length > 0) analysis += `   - 시점: ${foundTiming.join(', ')}\n`
+    if (foundClinical.length === 0 && foundType.length === 0 && foundTiming.length === 0) {
+      analysis += `   - 참고 이미지 (파일명에서 추가 정보 유추 불가)\n`
+    }
+
+    return analysis
   })
 
+  // 임상 모드일 때 소견 기반 서술 지시 추가
+  const clinicalInstruction = writingMode === 'expert' ? `
+**⚠️ 임상 모드 필수 지시:**
+위 파일명에서 추출된 임상 정보를 글의 핵심으로 활용하세요!
+- 부위/소견 정보가 있으면 → "방사선 사진상 [부위]에 [소견]이 관찰됩니다" 형태로 서술
+- 치료 전/후 이미지가 있으면 → 치료 과정의 흐름에 맞춰 배치
+- 촬영 유형이 있으면 → "X-ray상 ~", "CT상 ~" 형태로 소견 기술
+- ❌ 파일명에 정보가 없는데 소견을 지어내지 마세요
+- ✅ 파일명의 임상 키워드를 최대한 활용해서 임상 소견 기반 서술을 작성하세요
+` : `
+**이미지 활용 지시:**
+파일명에서 파악되는 정보를 참고하여 적절한 위치에 배치하세요.
+`
+
   return `
-## 📷 이미지 배치 안내
-아래 이미지들을 글의 적절한 위치에 배치해주세요.
+## 📷 이미지 임상 분석 & 배치 안내
+아래 이미지의 파일명에서 임상 정보를 추출했습니다.
 이미지는 \`[IMAGE_${'{숫자}'}\]\` 형식으로 표시합니다.
 
 ${analyzed.join('\n')}
-
+${clinicalInstruction}
 **배치 규칙:**
-- before/치료전 이미지: 증상 설명 섹션 근처
-- after/치료후 이미지: 치료 결과 섹션 근처
-- X-ray/CT 이미지: 진단 설명 부분
-- 과정 이미지: 치료 과정 설명 부분
-- 일반 이미지: 관련 내용 근처에 자연스럽게 배치
+- 치료 전 이미지: 소견/증상 설명 섹션에 배치
+- 치료 후 이미지: 치료 결과/예후 섹션에 배치
+- X-ray/CT 이미지: 진단 소견 섹션에 배치 (alt 텍스트에 소견 포함)
+- 과정 이미지: 치료 단계 설명 부분에 배치
+- 이미지 Alt 텍스트 필수: 📷 [이미지: {설명}] (alt: {키워드 포함 설명})
 `
 }
 
@@ -505,7 +590,7 @@ function buildUserPrompt(
   imageNames: string[],
   selectedKeywords?: string[]
 ): string {
-  const imageSection = analyzeImageNames(imageNames)
+  const imageSection = analyzeImageNames(imageNames, data.writingMode)
 
   // 사용자가 선택한 키워드가 있으면 우선 적용
   const keywordsToUse = selectedKeywords && selectedKeywords.length > 0
