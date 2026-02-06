@@ -12,6 +12,7 @@ interface BlogCase {
   doctorName: string
   topic: string
   memo: string
+  writingMode: WritingMode
   images?: UploadedImage[]
   status: 'pending' | 'generating' | 'completed' | 'error'
   result?: GenerateResult
@@ -426,6 +427,7 @@ export default function BatchQueue({ onResultsReady }: Props) {
       doctorName: selectedClinic.doctorName,
       topic: selectedTopic,
       memo: memo.trim(),
+      writingMode: postingMode,
       images: allImages.length > 0 ? allImages : undefined,
       status: 'pending',
     }
@@ -526,7 +528,7 @@ export default function BatchQueue({ onResultsReady }: Props) {
         patientInfo: caseItem.memo || '일반 환자',
         treatment: `${caseItem.topic} 치료`,
         model,
-        writingMode: postingMode,
+        writingMode: caseItem.writingMode,
         images: caseItem.images?.map((img, i) => ({
           name: buildImageNameWithTag(img, i),
           tag: img.tag,
@@ -968,42 +970,6 @@ export default function BatchQueue({ onResultsReady }: Props) {
         </div>
       </div>
 
-      {/* 포스팅 모드 선택 */}
-      <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
-        <h3 className="text-sm font-medium text-gray-700 mb-3">✍️ 포스팅 모드</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {POSTING_MODES.map((mode) => (
-            <button
-              key={mode.id}
-              type="button"
-              onClick={() => setPostingMode(mode.id)}
-              className={`p-4 rounded-xl text-left transition-all border-2 ${
-                postingMode === mode.id
-                  ? 'border-primary-500 bg-primary-50'
-                  : 'border-gray-200 bg-gray-50 hover:border-gray-300 hover:bg-gray-100'
-              }`}
-            >
-              <div className="font-semibold text-gray-900 mb-1">{mode.name}</div>
-              <div className="text-xs text-gray-600 mb-2">{mode.description}</div>
-              <div className="flex flex-wrap gap-1">
-                {mode.details.map((detail, i) => (
-                  <span
-                    key={i}
-                    className={`text-xs px-2 py-0.5 rounded-full ${
-                      postingMode === mode.id
-                        ? 'bg-primary-100 text-primary-700'
-                        : 'bg-gray-200 text-gray-600'
-                    }`}
-                  >
-                    {detail}
-                  </span>
-                ))}
-              </div>
-            </button>
-          ))}
-        </div>
-      </div>
-
       {/* 입력 폼 */}
       <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">➕ 케이스 추가</h3>
@@ -1142,13 +1108,36 @@ export default function BatchQueue({ onResultsReady }: Props) {
           )}
         </div>
 
+        {/* 케이스별 포스팅 모드 선택 */}
+        <div className="flex items-center gap-3 mb-3">
+          <span className="text-sm font-medium text-gray-700 shrink-0">모드:</span>
+          <div className="flex gap-2 flex-1">
+            {POSTING_MODES.map((mode) => (
+              <button
+                key={mode.id}
+                type="button"
+                onClick={() => setPostingMode(mode.id)}
+                className={`flex-1 py-2 px-3 rounded-xl text-sm font-medium transition-all border ${
+                  postingMode === mode.id
+                    ? mode.id === 'expert'
+                      ? 'border-blue-500 bg-blue-50 text-blue-700'
+                      : 'border-green-500 bg-green-50 text-green-700'
+                    : 'border-gray-200 bg-gray-50 text-gray-600 hover:border-gray-300'
+                }`}
+              >
+                {mode.id === 'expert' ? '🏥 임상' : '📚 정보성'}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <button
           type="button"
           onClick={addCase}
           disabled={!selectedClinic?.name || !selectedTopic || isGenerating}
           className="w-full py-3 px-4 bg-primary-500 text-white font-medium rounded-xl hover:bg-primary-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
-          + 큐에 추가
+          + 큐에 추가 ({postingMode === 'expert' ? '🏥 임상' : '📚 정보성'})
         </button>
       </div>
 
@@ -1201,8 +1190,29 @@ export default function BatchQueue({ onResultsReady }: Props) {
                     <span className="px-2 py-1 bg-primary-100 text-primary-700 text-sm rounded-lg">
                       {caseItem.topic}
                     </span>
+                    {/* 포스팅 모드 배지 (클릭으로 변경 가능) */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (caseItem.status !== 'pending') return
+                        setCases(prev => prev.map(c =>
+                          c.id === caseItem.id
+                            ? { ...c, writingMode: c.writingMode === 'expert' ? 'informative' : 'expert' }
+                            : c
+                        ))
+                      }}
+                      disabled={caseItem.status !== 'pending'}
+                      className={`px-2 py-0.5 text-xs rounded-lg transition-all ${
+                        caseItem.writingMode === 'expert'
+                          ? 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+                          : 'bg-green-100 text-green-700 hover:bg-green-200'
+                      } ${caseItem.status !== 'pending' ? 'cursor-default opacity-70' : 'cursor-pointer'}`}
+                      title={caseItem.status === 'pending' ? '클릭하여 모드 변경' : ''}
+                    >
+                      {caseItem.writingMode === 'expert' ? '🏥 임상' : '📚 정보성'}
+                    </button>
                     {caseItem.memo && (
-                      <span className="text-sm text-gray-500">{caseItem.memo}</span>
+                      <span className="text-sm text-gray-500 truncate max-w-[200px]">{caseItem.memo}</span>
                     )}
                     {caseItem.images && caseItem.images.length > 0 && (
                       <span className="text-xs text-gray-400">📷 {caseItem.images.length}</span>
