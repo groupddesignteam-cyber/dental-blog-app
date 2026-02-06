@@ -22,8 +22,8 @@ export const TITLE_RULES = {
 
 // 본문 작성 규칙 (해시태그 제외 기준)
 export const CONTENT_RULES = {
-  totalLength: { min: 1700, max: 1900 }, // 해시태그 제외, 공백 제외 약 1800자 ±100
-  totalLengthWithSpaces: { min: 2000, max: 2300 }, // 공백 포함 시
+  totalLength: { min: 2300, max: 3000 }, // 해시태그 제외, 공백 제외 약 2500자 (서론500+본론1500+결론500)
+  totalLengthWithSpaces: { min: 2800, max: 3500 }, // 공백 포함 시
   lineLength: 40, // 한 줄 40자 내외
   paragraphLines: { min: 3, max: 5 },
   keywordDensity: { min: 2, max: 3 }, // 퍼센트
