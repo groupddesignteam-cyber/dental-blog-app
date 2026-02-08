@@ -13,11 +13,10 @@ const LLM_MODELS = [
   { id: 'gemini', name: 'Gemini Pro', description: '빠른 응답 + 무료', icon: '⚡' },
 ] as const
 
-// 글쓰기 모드 옵션
-const WRITING_MODES: Array<{ id: WritingMode | undefined; name: string; description: string; icon: string }> = [
-  { id: undefined, name: '기본 모드', description: '치과별 페르소나 자동 적용', icon: '🏥' },
-  { id: 'expert', name: '전문가 모드', description: '의학적 정확성, 신뢰감 있는 전문적 글', icon: '🎓' },
-  { id: 'informative', name: '정보성 모드', description: '재미있고 이해하기 쉬운 친근한 글', icon: '📚' },
+// 글쓰기 모드 옵션 (임상/정보성 2가지만 - BatchQueue와 통일)
+const WRITING_MODES: Array<{ id: WritingMode; name: string; description: string; icon: string }> = [
+  { id: 'expert', name: '🏥 임상 포스팅', description: '사진 판독 기반 · 전문 용어 + 해설 · 문어체', icon: '🎓' },
+  { id: 'informative', name: '📚 정보성 포스팅', description: '일반인 눈높이 · 쉬운 비유 · 문어체 + 친근한 톤', icon: '📚' },
 ]
 
 // 기본 치료 목록 (시트에서 못 가져올 경우)
@@ -206,7 +205,7 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
     treatment: '',
     photoDescription: '',
     model: 'claude',
-    writingMode: undefined, // 기본 모드 (페르소나 자동 적용)
+    writingMode: 'expert' as WritingMode, // 임상 포스팅 기본
   })
 
   // 시트 데이터 가져오기
@@ -462,7 +461,7 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
           ))}
         </div>
         <p className="mt-3 text-xs text-gray-500">
-          💡 기본 모드: 시트에 저장된 기존 글 스타일을 자동으로 참조합니다.
+          💡 두 모드 모두 시트에 저장된 기존 글 스타일(페르소나)을 참고합니다. 어미 규칙은 선택한 모드가 우선합니다.
         </p>
       </div>
 
