@@ -64,7 +64,7 @@ const POSTING_MODES = [
   {
     id: 'informative' as WritingMode,
     name: '📚 정보성 포스팅',
-    description: '일반인 눈높이 · 쉬운 비유 · 친근한 구어체',
+    description: '일반인 눈높이 · 쉬운 비유 · 문어체 + 친근한 톤',
     details: ['궁금증 해결 중심', '이해하기 쉬운']
   },
 ] as const
