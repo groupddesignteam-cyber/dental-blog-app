@@ -12,6 +12,57 @@ export interface SheetData {
   treatments: string[]
 }
 
+// 시트 탭 이름 후보 (sheets-rag.ts와 동기화)
+const SHEET_TAB_CANDIDATES = ['Rawdata', '블로그 포스팅', '블로그포스팅', 'Sheet1', '시트1']
+let _cachedTabName: string | null = null
+
+// 탭 이름 자동 탐색 후 데이터 가져오기
+async function fetchWithTabFallback(sheetId: string, apiKey: string, columns: string): Promise<string[][]> {
+  // 1. 캐시된 탭 이름이 있으면 바로 사용
+  if (_cachedTabName !== null) {
+    const range = _cachedTabName ? `${_cachedTabName}!${columns}` : columns
+    const rows = await fetchRange(sheetId, apiKey, range)
+    if (rows && rows.length > 0) return rows
+    _cachedTabName = null
+  }
+
+  // 2. 후보 탭 이름들을 순서대로 시도
+  for (const tabName of SHEET_TAB_CANDIDATES) {
+    const rows = await fetchRange(sheetId, apiKey, `${tabName}!${columns}`)
+    if (rows && rows.length > 0) {
+      console.log(`[SheetData] ✅ 탭 "${tabName}"에서 ${rows.length}개 행 발견`)
+      _cachedTabName = tabName
+      return rows
+    }
+  }
+
+  // 3. 탭 이름 없이 기본 시트 시도
+  const rows = await fetchRange(sheetId, apiKey, columns)
+  if (rows && rows.length > 0) {
+    console.log(`[SheetData] ✅ 기본 시트에서 ${rows.length}개 행 발견`)
+    _cachedTabName = ''
+    return rows
+  }
+
+  return []
+}
+
+// 단일 range 가져오기
+async function fetchRange(sheetId: string, apiKey: string, range: string): Promise<string[][] | null> {
+  try {
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(range)}?key=${apiKey}`
+    const response = await fetch(url, {
+      headers: { 'Accept': 'application/json' },
+      next: { revalidate: 60 },
+    })
+    if (!response.ok) return null
+    const data = await response.json()
+    return data.values || []
+  } catch {
+    return null
+  }
+}
+
 // Google Sheets에서 치과명, 치료 목록 가져오기
 export async function getSheetData(): Promise<SheetData> {
   const sheetId = process.env.GOOGLE_SHEETS_ID
@@ -23,24 +74,9 @@ export async function getSheetData(): Promise<SheetData> {
   }
 
   try {
-    // Google Sheets API v4 - 공개 시트 읽기
+    // Google Sheets API v4 - 탭 자동 탐색
     // A:날짜, B:치과명, C:치료, D:지역, E:원장님
-    const range = 'A2:E'
-    const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${range}?key=${apiKey}`
-
-    const response = await fetch(url, {
-      headers: {
-        'Accept': 'application/json',
-      },
-      next: { revalidate: 60 }, // 60초 캐시
-    })
-
-    if (!response.ok) {
-      throw new Error(`Sheets API error: ${response.status}`)
-    }
-
-    const data = await response.json()
-    const rows = data.values || []
+    const rows = await fetchWithTabFallback(sheetId, apiKey, 'A2:E')
 
     // 치과 상세정보 맵 (중복 제거용)
     const clinicMap = new Map<string, ClinicDetail>()

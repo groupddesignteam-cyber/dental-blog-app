@@ -3,6 +3,12 @@
 
 import { google } from 'googleapis'
 
+// 시트 탭 이름 후보 (순서대로 시도)
+const SHEET_TAB_CANDIDATES = ['Rawdata', '블로그 포스팅', '블로그포스팅', 'Sheet1', '시트1']
+
+// 탭 이름 캐시 (서버 런타임 동안 유지)
+let _cachedTabName: string | null = null
+
 // API Key 방식으로 시트 데이터 가져오기 (더 간단하고 안정적)
 async function fetchSheetDataWithApiKey(range: string): Promise<string[][] | null> {
   const sheetId = process.env.GOOGLE_SHEETS_ID
@@ -21,7 +27,7 @@ async function fetchSheetDataWithApiKey(range: string): Promise<string[][] | nul
     })
 
     if (!response.ok) {
-      console.log(`[Sheets] API 오류: ${response.status}`)
+      console.log(`[Sheets] API 오류: ${response.status} (range: ${range})`)
       return null
     }
 
@@ -31,6 +37,40 @@ async function fetchSheetDataWithApiKey(range: string): Promise<string[][] | nul
     console.error('[Sheets] 데이터 가져오기 실패:', error)
     return null
   }
+}
+
+// 여러 탭 이름을 시도하여 블로그 글 데이터 가져오기
+async function fetchBlogPostsData(): Promise<string[][] | null> {
+  // 1. 캐시된 탭 이름이 있으면 바로 사용
+  if (_cachedTabName !== null) {
+    const range = _cachedTabName ? `${_cachedTabName}!A2:F` : 'A2:F'
+    const rows = await fetchSheetDataWithApiKey(range)
+    if (rows && rows.length > 0) return rows
+    _cachedTabName = null // 캐시 무효화
+  }
+
+  // 2. 후보 탭 이름들을 순서대로 시도
+  for (const tabName of SHEET_TAB_CANDIDATES) {
+    console.log(`[Sheets] 탭 "${tabName}" 시도 중...`)
+    const rows = await fetchSheetDataWithApiKey(`${tabName}!A2:F`)
+    if (rows && rows.length > 0) {
+      console.log(`[Sheets] ✅ 탭 "${tabName}"에서 ${rows.length}개 행 발견`)
+      _cachedTabName = tabName
+      return rows
+    }
+  }
+
+  // 3. 탭 이름 없이 기본 시트 시도
+  console.log(`[Sheets] 기본 시트(탭명 없음) 시도 중...`)
+  const rows = await fetchSheetDataWithApiKey('A2:F')
+  if (rows && rows.length > 0) {
+    console.log(`[Sheets] ✅ 기본 시트에서 ${rows.length}개 행 발견`)
+    _cachedTabName = '' // 빈 문자열 = 기본 시트
+    return rows
+  }
+
+  console.log('[Sheets] ❌ 모든 탭에서 데이터를 찾지 못했습니다.')
+  return null
 }
 
 // 주제별 키워드 매핑
@@ -171,14 +211,14 @@ function extractExpressions(content: string): PatternAnalysis['commonExpressions
   return expressions
 }
 
-// 유사한 글 찾기 (API Key 방식)
+// 유사한 글 찾기 (자동 탭 탐색)
 export async function findSimilarPosts(
   queryTopic: string,
   sheetId?: string,
   topN: number = 3
 ): Promise<SimilarPost[]> {
-  // API Key 방식으로 데이터 가져오기
-  const rows = await fetchSheetDataWithApiKey('Rawdata!A2:F')
+  // 자동 탭 탐색으로 데이터 가져오기
+  const rows = await fetchBlogPostsData()
 
   if (!rows || rows.length === 0) {
     console.log('[findSimilarPosts] 시트 데이터 없음')
@@ -461,14 +501,14 @@ function analyzeTone(content: string): string[] {
   return tones.length > 0 ? tones : ['일반적']
 }
 
-// 치과명 + 주제별 글 찾기 (API Key 방식)
+// 치과명 + 주제별 글 찾기 (자동 탭 탐색)
 export async function findClinicTopicPosts(
   clinicName: string,
   topic: string,
   sheetId?: string
 ): Promise<SimilarPost[]> {
-  // API Key 방식으로 데이터 가져오기
-  const rows = await fetchSheetDataWithApiKey('Rawdata!A2:F')
+  // 자동 탭 탐색으로 데이터 가져오기
+  const rows = await fetchBlogPostsData()
 
   if (!rows || rows.length === 0) {
     console.log('[findClinicTopicPosts] 시트 데이터 없음')
@@ -615,6 +655,35 @@ export async function extractClinicPersona(
     avgLength,
     postCount: posts.length,
   }
+}
+
+// 치과별 기존 글에서 사용된 메인키워드 추출
+export async function extractUsedKeywords(clinicName: string): Promise<string[]> {
+  const rows = await fetchBlogPostsData()
+  if (!rows || rows.length === 0) return []
+
+  const keywords = new Set<string>()
+  const clinicNameTrimmed = clinicName.trim()
+
+  for (const row of rows) {
+    const rowClinic = (row[1] || '').trim()
+    const rowTopic = (row[2] || '').trim()
+    const region = (row[3] || '').trim()
+
+    // 치과명 일치
+    if (!rowClinic.includes(clinicNameTrimmed) && !clinicNameTrimmed.includes(rowClinic)) continue
+
+    // 지역+치과명 조합
+    if (region && rowClinic) {
+      keywords.add(`${region} ${rowClinic}`)
+    }
+    // 지역+치료 조합
+    if (region && rowTopic) {
+      keywords.add(`${region} ${rowTopic}`)
+    }
+  }
+
+  return [...keywords]
 }
 
 // ~요 어미를 ~다 체로 치환 (페르소나 샘플 정화용)

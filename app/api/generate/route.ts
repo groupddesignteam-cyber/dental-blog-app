@@ -909,7 +909,7 @@ function generateImageHints(topic: string): string {
   }
 
   return `
-## 🖼️ 추천 이미지 힌트 (정보성 포스팅용)
+## 🖼️ 추천 이미지 힌트
 
 이미지가 제공되지 않았으므로, 아래 이미지를 글에 배치하시는 것을 추천합니다.
 글 본문에서 적절한 위치에 이미지 플레이스홀더를 삽입하세요.
@@ -1000,7 +1000,7 @@ ${trendAnalysis}
 
 ${imageSection}
 
-${imageNames.length === 0 && data.writingMode === 'informative' ? generateImageHints(data.topic) : ''}
+${imageNames.length === 0 ? generateImageHints(data.topic) : ''}
 
 ${formatMedicalInfoForPrompt(data.topic)}
 
