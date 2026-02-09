@@ -254,6 +254,15 @@ export default function BatchQueue({ onResultsReady }: Props) {
   const [editContent, setEditContent] = useState('')
   const [editTitle, setEditTitle] = useState('')
 
+  // 대기 중 케이스 인라인 편집 상태
+  const [editingPendingId, setEditingPendingId] = useState<string | null>(null)
+  const [pendingEditFields, setPendingEditFields] = useState({
+    topic: '',
+    memo: '',
+    mainKeyword: '',
+    writingMode: 'expert' as WritingMode,
+  })
+
   // 파일 입력 refs (카테고리별)
   const fileInputRefs = useRef<Record<ImageTag, HTMLInputElement | null>>({
     before: null,
@@ -521,6 +530,39 @@ export default function BatchQueue({ onResultsReady }: Props) {
     setEditingCaseId(null)
     setEditTitle('')
     setEditContent('')
+  }
+
+  // 대기 케이스 편집 시작
+  const startPendingEdit = (caseItem: BlogCase) => {
+    setEditingPendingId(caseItem.id)
+    setPendingEditFields({
+      topic: caseItem.topic,
+      memo: caseItem.memo,
+      mainKeyword: caseItem.mainKeyword || '',
+      writingMode: caseItem.writingMode,
+    })
+  }
+
+  // 대기 케이스 편집 저장
+  const savePendingEdit = (id: string) => {
+    setCases(prev => prev.map(c => {
+      if (c.id === id) {
+        return {
+          ...c,
+          topic: pendingEditFields.topic,
+          memo: pendingEditFields.memo,
+          mainKeyword: pendingEditFields.mainKeyword.trim() || undefined,
+          writingMode: pendingEditFields.writingMode,
+        }
+      }
+      return c
+    }))
+    setEditingPendingId(null)
+  }
+
+  // 대기 케이스 편집 취소
+  const cancelPendingEdit = () => {
+    setEditingPendingId(null)
   }
 
   // 이미지 이름에 태그 정보 포함시키기
@@ -1363,7 +1405,16 @@ export default function BatchQueue({ onResultsReady }: Props) {
                     )}
                   </div>
                   <div className="flex items-center gap-2">
-                    {caseItem.status === 'pending' && (
+                    {caseItem.status === 'pending' && !isGenerating && (
+                      <button
+                        type="button"
+                        onClick={() => editingPendingId === caseItem.id ? cancelPendingEdit() : startPendingEdit(caseItem)}
+                        className="px-3 py-1 text-sm rounded-lg bg-gray-200 text-gray-700 hover:bg-gray-300 transition-colors"
+                      >
+                        {editingPendingId === caseItem.id ? '접기' : '✏️ 수정'}
+                      </button>
+                    )}
+                    {caseItem.status === 'pending' && isGenerating && (
                       <span className="text-sm text-gray-500">대기 중</span>
                     )}
                     {caseItem.status === 'generating' && (
@@ -1410,6 +1461,110 @@ export default function BatchQueue({ onResultsReady }: Props) {
                     )}
                   </div>
                 </div>
+
+                {/* 대기 케이스 인라인 편집 */}
+                {editingPendingId === caseItem.id && caseItem.status === 'pending' && (
+                  <div className="border-t border-gray-200 p-4 bg-white space-y-3">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {/* 치료 선택 */}
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">치료</label>
+                        <SearchableSelect
+                          options={allTreatments}
+                          value={pendingEditFields.topic}
+                          onChange={(v) => setPendingEditFields(prev => ({ ...prev, topic: v }))}
+                          placeholder="치료 검색..."
+                          allowCustom
+                        />
+                      </div>
+                      {/* 메인키워드 */}
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">
+                          🎯 메인키워드
+                          <span className="ml-1 text-gray-400 font-normal">미입력 시 자동 생성</span>
+                        </label>
+                        <div className="flex gap-1">
+                          <input
+                            type="text"
+                            value={pendingEditFields.mainKeyword}
+                            onChange={(e) => setPendingEditFields(prev => ({ ...prev, mainKeyword: e.target.value }))}
+                            placeholder={`예: ${caseItem.region} ${pendingEditFields.topic}`}
+                            className="flex-1 px-3 py-2 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                          />
+                          {caseItem.region && caseItem.clinicName && (
+                            <button
+                              type="button"
+                              onClick={() => setPendingEditFields(prev => ({ ...prev, mainKeyword: `${caseItem.region} ${caseItem.clinicName}` }))}
+                              className="px-2 py-1 text-xs bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 whitespace-nowrap border border-blue-200"
+                            >
+                              지역+치과명
+                            </button>
+                          )}
+                          {caseItem.region && pendingEditFields.topic && (
+                            <button
+                              type="button"
+                              onClick={() => setPendingEditFields(prev => ({ ...prev, mainKeyword: `${caseItem.region} ${pendingEditFields.topic}` }))}
+                              className="px-2 py-1 text-xs bg-green-50 text-green-600 rounded-lg hover:bg-green-100 whitespace-nowrap border border-green-200"
+                            >
+                              지역+진료
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    {/* 메모 */}
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">CC / 메모</label>
+                      <textarea
+                        value={pendingEditFields.memo}
+                        onChange={(e) => setPendingEditFields(prev => ({ ...prev, memo: e.target.value }))}
+                        rows={3}
+                        placeholder="증상, 부위, 특이사항 등"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-y"
+                      />
+                    </div>
+                    {/* 모드 선택 */}
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs font-medium text-gray-600">모드:</span>
+                      <div className="flex gap-2">
+                        {POSTING_MODES.map((mode) => (
+                          <button
+                            key={mode.id}
+                            type="button"
+                            onClick={() => setPendingEditFields(prev => ({ ...prev, writingMode: mode.id }))}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${
+                              pendingEditFields.writingMode === mode.id
+                                ? mode.id === 'expert'
+                                  ? 'border-blue-500 bg-blue-50 text-blue-700'
+                                  : 'border-green-500 bg-green-50 text-green-700'
+                                : 'border-gray-200 bg-gray-50 text-gray-500 hover:border-gray-300'
+                            }`}
+                          >
+                            {mode.id === 'expert' ? '🏥 임상' : '📚 정보성'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {/* 버튼 */}
+                    <div className="flex gap-2 justify-end pt-1">
+                      <button
+                        type="button"
+                        onClick={cancelPendingEdit}
+                        className="px-4 py-2 bg-gray-100 text-gray-700 text-sm rounded-lg hover:bg-gray-200"
+                      >
+                        취소
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => savePendingEdit(caseItem.id)}
+                        disabled={!pendingEditFields.topic}
+                        className="px-4 py-2 bg-primary-500 text-white text-sm rounded-lg hover:bg-primary-600 disabled:opacity-50"
+                      >
+                        저장
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {/* 미리보기/편집 영역 */}
                 {expandedCaseId === caseItem.id && caseItem.status === 'completed' && caseItem.result && (
