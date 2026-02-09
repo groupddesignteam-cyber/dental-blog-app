@@ -788,17 +788,21 @@ function analyzeImageNames(imageNames: string[], writingMode?: WritingMode): str
     const orderMatch = nameWithoutExt.match(/^(\d{1,3})[_\-\s]/)
     const order = orderMatch ? parseInt(orderMatch[1], 10) : 999
 
-    // 시점 파싱
+    // 시점/카테고리 파싱 (사용자 파일명 규칙: 순서_카테고리_자세한설명.ext)
+    // 카테고리: 초진, 치료중, 치료후, x-ray, ct, 치료과정, 기타
     let phase = '기타'
     if (/초진/.test(nameWithoutExt)) phase = '초진'
     else if (/치료전|치료_전|before/i.test(nameWithoutExt)) phase = '치료전'
+    else if (/치료과정|치료_과정/.test(nameWithoutExt)) phase = '치료과정'
     else if (/치료중|치료_중|progress/i.test(nameWithoutExt)) phase = '치료중'
     else if (/치료후|치료_후|after/i.test(nameWithoutExt)) phase = '치료후'
+    else if (/x-?ray|엑스레이|파노라마/i.test(nameWithoutExt)) phase = 'x-ray'
+    else if (/\bct\b|cbct|씨티/i.test(nameWithoutExt)) phase = 'ct'
 
-    // 순번에서 시점/설명 분리 후 설명 추출
+    // 순번에서 카테고리/설명 분리 후 설명 추출
     const descPart = nameWithoutExt
       .replace(/^\d{1,3}[_\-\s]/, '')           // 순번 제거
-      .replace(/^(초진|치료전|치료중|치료후)[_\-\s]*/i, '') // 시점 제거
+      .replace(/^(초진|치료전|치료중|치료후|치료과정|치료_과정|x-?ray|xray|ct|cbct|기타)[_\-\s]*/i, '') // 카테고리 제거
       .replace(/\s*\(\d+\)\s*$/, '')             // 끝에 (1), (2) 등 제거
       .trim()
 
@@ -835,12 +839,18 @@ function analyzeImageNames(imageNames: string[], writingMode?: WritingMode): str
   parsed.sort((a, b) => a.order - b.order)
 
   // 시점별 그룹핑 (글 구조 자동 생성)
-  const groups: Record<string, ParsedImage[]> = { '초진': [], '치료전': [], '치료중': [], '치료후': [], '기타': [] }
-  for (const img of parsed) {
-    groups[img.phase].push(img)
+  const groups: Record<string, ParsedImage[]> = {
+    '초진': [], '치료전': [], '치료중': [], '치료과정': [],
+    '치료후': [], 'x-ray': [], 'ct': [], '기타': []
   }
-  const introImages = [...groups['초진'], ...groups['치료전']]
-  const processImages = groups['치료중']
+  for (const img of parsed) {
+    if (groups[img.phase]) groups[img.phase].push(img)
+    else groups['기타'].push(img)
+  }
+  // 초진/치료전/x-ray/ct → 도입부 (진단 소견)
+  const introImages = [...groups['초진'], ...groups['치료전'], ...groups['x-ray'], ...groups['ct']]
+  // 치료중/치료과정 → 전개부 (치료 과정)
+  const processImages = [...groups['치료중'], ...groups['치료과정']]
   const resultImages = groups['치료후']
   const hasStructuredOrder = parsed.some(p => p.order !== 999) // 순번이 있는 파일인지
 
@@ -850,7 +860,7 @@ function analyzeImageNames(imageNames: string[], writingMode?: WritingMode): str
     if (img.toothNumbers.length > 0) line += `   - 부위: ${img.toothNumbers.join(', ')}\n`
     if (img.clinicalInfo.length > 0) line += `   - 임상: ${img.clinicalInfo.join(', ')}\n`
     if (img.imagingType.length > 0) line += `   - 촬영: ${img.imagingType.join(', ')}\n`
-    if (img.description) line += `   - 설명: ${img.description}\n`
+    if (img.description) line += `   - ⭐ 설명: ${img.description} ← **이 내용을 글 본문에 반드시 반영!**\n`
     return line
   })
 
@@ -882,13 +892,26 @@ ${resultImages.length > 0 ? resultImages.map((img, i) => `- [IMAGE_${parsed.inde
 
   // 임상 모드 추가 지시
   const clinicalInstruction = writingMode === 'expert' ? `
-**⚠️ 임상 모드 필수 지시:**
-- 파일명에서 추출된 임상 정보를 글의 핵심으로 활용하세요!
-- 부위/소견 정보 → "방사선 사진상 [부위]에 [소견]이 관찰됩니다" 형태로 서술
-- 촬영 유형 → "X-ray상 ~", "CT상 ~" 형태로 소견 기술
-- "사진을 보시면~", "다음 사진에서 확인하실 수 있듯이~" 형태로 이미지 참조 유도
+**⚠️ 임상 모드 필수 지시 — 파일명이 곧 글의 뼈대입니다!**
+
+📌 **파일명 규칙**: \`순서_카테고리_자세한설명.jpg\`
+- 순서(숫자): 이미지 배치 순서 → 글의 서술 흐름 결정
+- 카테고리(초진/치료중/치료후/x-ray/ct/치료과정/기타): 글 섹션 매핑
+- 자세한설명: **이 부분이 핵심!** → 임상 소견의 근거로 직접 활용
+
+📌 **자세한설명 활용법**:
+- 파일명의 설명에 부위/소견이 있으면 → "방사선 사진상 [부위]에 [소견]이 관찰됩니다" 서술
+- 파일명에 치료 내용이 있으면 → "사진을 보시면 [치료] 과정을 확인하실 수 있습니다" 서술
+- 파일명에 촬영 유형이 있으면 → "X-ray상 ~", "CT상 ~", "구내 사진상 ~" 소견 기술
+- 각 이미지의 "설명" 항목을 글 본문에서 반드시 언급하세요!
+
+📌 **카테고리 → 글 배치**:
+- 초진/치료전/x-ray/ct → **초진 소견 섹션**: 진단, 치료 계획 설명
+- 치료중/치료과정 → **단계별 치료 과정 섹션**: N단계 형식으로 서술
+- 치료후 → **경과 관찰 섹션**: 최종 상태, 보철 적합도
+
 - ❌ 파일명에 정보가 없는데 소견을 지어내지 마세요
-- ✅ 파일명의 임상 키워드를 최대한 활용해서 임상 소견 기반 서술을 작성하세요
+- ✅ 파일명의 임상 키워드 + 자세한설명을 최대한 활용해서 글을 전개하세요
 ` : `
 **이미지 활용 지시:**
 - 파일명에서 파악되는 정보를 참고하여 적절한 위치에 배치하세요.
