@@ -79,22 +79,37 @@ const IMAGE_TAGS: { id: ImageTag; label: string; color: string }[] = [
   { id: 'other', label: '기타', color: 'bg-gray-100 text-gray-600' },
 ]
 
+// 파일명에서 순번 추출 (01_xxx.jpg → 1, 없으면 999)
+function extractOrderFromFilename(filename: string): number {
+  const match = filename.match(/^(\d{1,3})[_\-\s]/)
+  return match ? parseInt(match[1], 10) : 999
+}
+
 // 파일명에서 태그 자동 감지
 function detectTagFromFilename(filename: string): ImageTag {
   const lower = filename.toLowerCase()
+  // 초진 → before
+  if (lower.includes('초진')) {
+    return 'before'
+  }
   if (lower.includes('before') || lower.includes('치료전') || lower.includes('_전.') || lower.includes('_전_')) {
     return 'before'
   }
   if (lower.includes('after') || lower.includes('치료후') || lower.includes('_후.') || lower.includes('_후_')) {
     return 'after'
   }
+  // X-ray는 시점(치료전/중/후)과 독립적으로 존재하므로, 시점 우선 체크 후 촬영유형 체크
   if (lower.includes('xray') || lower.includes('x-ray') || lower.includes('엑스레이') || lower.includes('파노라마')) {
+    // 치료중 + xray → progress로 분류 (치료 과정 중 촬영)
+    if (lower.includes('치료중')) return 'progress'
     return 'xray'
   }
   if (lower.includes('ct') || lower.includes('씨티')) {
+    if (lower.includes('치료중')) return 'progress'
     return 'ct'
   }
-  if (lower.includes('과정') || lower.includes('진행') || lower.includes('progress')) {
+  // 치료중 → progress
+  if (lower.includes('치료중') || lower.includes('과정') || lower.includes('진행') || lower.includes('progress')) {
     return 'progress'
   }
   return 'other'
@@ -386,8 +401,15 @@ export default function BatchQueue({ onResultsReady }: Props) {
     }
   }, [processImageFile])
 
-  // 모든 카테고리 이미지를 하나의 배열로 합치기
+  // 모든 카테고리 이미지를 하나의 배열로 합치기 (순번 정렬 우선)
   const getAllImages = useCallback((): UploadedImage[] => {
+    const allImages = Object.values(imagesByCategory).flat()
+    // 파일명에 순번이 있는 이미지가 하나라도 있으면 순번 기준 정렬
+    const hasOrder = allImages.some(img => extractOrderFromFilename(img.name) !== 999)
+    if (hasOrder) {
+      return [...allImages].sort((a, b) => extractOrderFromFilename(a.name) - extractOrderFromFilename(b.name))
+    }
+    // 순번 없으면 기존 카테고리 순서 유지
     const order: ImageTag[] = ['before', 'xray', 'ct', 'progress', 'after', 'other']
     return order.flatMap(cat => imagesByCategory[cat])
   }, [imagesByCategory])

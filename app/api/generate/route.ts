@@ -602,7 +602,7 @@ function sanitizeFormData(data: GenerateFormData): GenerateFormData {
   }
 }
 
-// 이미지 파일명에서 임상 정보 추출 + 배치 힌트 생성
+// 이미지 파일명에서 임상 정보 추출 + 순번 기반 구조화
 function analyzeImageNames(imageNames: string[], writingMode?: WritingMode): string {
   if (!imageNames || imageNames.length === 0) return ''
 
@@ -625,14 +625,23 @@ function analyzeImageNames(imageNames: string[], writingMode?: WritingMode): str
     '낭종': '낭종(물혹)',
     '매복': '매복(잇몸 속에 묻힌 상태)',
     '치주': '치주질환(잇몸병)',
+    '치주염': '치주염(잇몸 염증)',
     '발적': '발적(붉어짐)',
     '부종': '부종(부기)',
+    '결손': '결손치(빠진 치아)',
+    '결손치': '결손치(빠진 치아)',
     // 치료
     '임플란트': '임플란트 식립',
     '식립': '임플란트 식립',
-    '픽스쳐': '임플란트 픽스쳐(인공 뿌리)',
-    '크라운': '보철 크라운(씌우기)',
+    '픽스쳐': '픽스쳐(임플란트 인공 뿌리)',
+    '픽스처': '픽스쳐(임플란트 인공 뿌리)',
+    '어버트먼트': '보강관(임플란트-보철 연결체)',
+    '힐링어버트먼트': '보강관(치유 지대주)',
+    '크라운': '지르코니아 보철(씌우기)',
+    '지르코니아': '지르코니아 보철',
     '보철': '보철 수복',
+    '임시보철': '심미 수복물(임시 보철)',
+    '임시치아': '심미 수복물(임시 치아)',
     '발치': '발치(치아 뽑기)',
     '근관': '근관치료(신경치료)',
     '신경치료': '근관치료(신경치료)',
@@ -640,91 +649,179 @@ function analyzeImageNames(imageNames: string[], writingMode?: WritingMode): str
     '교정': '교정치료',
     '레진': '레진 수복',
     '인레이': '인레이 수복',
+    // 수술 관련
+    '상악동거상술': '상악동 거상술(위턱 뼈 보충 수술)',
+    '상악동': '상악동(위턱 공기주머니)',
+    '근치술': '상악동 근치술(상악동 내 염증 제거)',
+    '멤브레인': '차폐막(골이식 보호막)',
+    '봉합': '봉합(수술 부위 꿰매기)',
+    '절개': '절개(잇몸 열기)',
+    '수면마취': '수면 마취(진정 요법)',
+    '골유착': '골유착(뼈와 임플란트 결합)',
+    '2차수술': '2차 수술(보강관 교체)',
     // 시점
     'before': '치료 전', '치료전': '치료 전',
+    '초진': '초진(첫 진찰)',
     'after': '치료 후', '치료후': '치료 후',
+    '치료중': '치료 중',
     '경과': '치료 경과', '과정': '치료 과정', '진행': '치료 진행',
     // 촬영 유형
-    'xray': 'X-ray 촬영', 'x-ray': 'X-ray 촬영', '엑스레이': 'X-ray 촬영',
+    'xray': 'X-ray', 'x-ray': 'X-ray', '엑스레이': 'X-ray',
     'ct': 'CT 촬영', '씨티': 'CT 촬영', 'cbct': 'CBCT 촬영',
     '파노라마': '파노라마 촬영', '구내': '구내 사진', '구외': '구외 사진',
   }
 
-  const analyzed = imageNames.map((name, index) => {
-    // 확장자 제거 후 구분자로 분리
-    const nameWithoutExt = name.replace(/\.[^.]+$/, '')
-    const tokens = nameWithoutExt.split(/[_\-\s.]+/)
+  // 파일명에서 순번 + 시점 + 설명 파싱
+  interface ParsedImage {
+    originalName: string
+    order: number          // 순번 (01, 02, ...)
+    phase: string          // 시점 (초진, 치료전, 치료중, 치료후)
+    description: string    // 설명 텍스트
+    clinicalInfo: string[] // 추출된 임상 키워드
+    imagingType: string[]  // 촬영 유형
+    toothNumbers: string[] // 치식 번호
+  }
 
-    // 파일명에서 임상 키워드 매칭
-    const foundClinical: string[] = []
-    const foundTiming: string[] = []
-    const foundType: string[] = []
+  const parsed: ParsedImage[] = imageNames.map(name => {
+    const nameWithoutExt = name.replace(/\.[^.]+$/, '')
+
+    // 순번 파싱: 파일명 앞 숫자 (01_, 02_ 등)
+    const orderMatch = nameWithoutExt.match(/^(\d{1,3})[_\-\s]/)
+    const order = orderMatch ? parseInt(orderMatch[1], 10) : 999
+
+    // 시점 파싱
+    let phase = '기타'
+    if (/초진/.test(nameWithoutExt)) phase = '초진'
+    else if (/치료전|치료_전|before/i.test(nameWithoutExt)) phase = '치료전'
+    else if (/치료중|치료_중|progress/i.test(nameWithoutExt)) phase = '치료중'
+    else if (/치료후|치료_후|after/i.test(nameWithoutExt)) phase = '치료후'
+
+    // 순번에서 시점/설명 분리 후 설명 추출
+    const descPart = nameWithoutExt
+      .replace(/^\d{1,3}[_\-\s]/, '')           // 순번 제거
+      .replace(/^(초진|치료전|치료중|치료후)[_\-\s]*/i, '') // 시점 제거
+      .replace(/\s*\(\d+\)\s*$/, '')             // 끝에 (1), (2) 등 제거
+      .trim()
+
+    // 키워드 매칭
+    const clinicalInfo: string[] = []
+    const imagingType: string[] = []
     const toothNumbers: string[] = []
 
+    const tokens = nameWithoutExt.split(/[_\-\s.()]+/)
     for (const token of tokens) {
       const lower = token.toLowerCase()
-
-      // 치식 번호 (#11, #36, 36번 등)
+      // 치식 번호
       const toothMatch = token.match(/^#?(\d{2})번?$/)
-      if (toothMatch) {
-        toothNumbers.push(`#${toothMatch[1]}`)
-        continue
-      }
-
+      if (toothMatch) { toothNumbers.push(`#${toothMatch[1]}`); continue }
+      // 번대 (10번대, 40번대 등)
+      const rangeMatch = token.match(/^(\d{2})번대$/)
+      if (rangeMatch) { toothNumbers.push(`${rangeMatch[1]}번대`); continue }
       // 키워드 매칭
-      for (const [keyword, description] of Object.entries(clinicalKeywords)) {
+      for (const [keyword, desc] of Object.entries(clinicalKeywords)) {
         if (lower.includes(keyword.toLowerCase())) {
-          if (['치료 전', '치료 후', '치료 경과', '치료 과정', '치료 진행'].includes(description)) {
-            if (!foundTiming.includes(description)) foundTiming.push(description)
-          } else if (description.includes('촬영') || description.includes('사진')) {
-            if (!foundType.includes(description)) foundType.push(description)
-          } else {
-            if (!foundClinical.includes(description)) foundClinical.push(description)
+          if (desc.includes('X-ray') || desc.includes('CT') || desc.includes('촬영') || desc.includes('사진')) {
+            if (!imagingType.includes(desc)) imagingType.push(desc)
+          } else if (!['치료 전', '치료 후', '치료 중', '초진(첫 진찰)', '치료 경과', '치료 과정', '치료 진행'].includes(desc)) {
+            if (!clinicalInfo.includes(desc)) clinicalInfo.push(desc)
           }
         }
       }
     }
 
-    // 분석 결과 조합
-    let analysis = `${index + 1}. **파일명**: ${name}\n`
-    if (toothNumbers.length > 0) analysis += `   - 부위: ${toothNumbers.join(', ')}\n`
-    if (foundClinical.length > 0) analysis += `   - 임상 정보: ${foundClinical.join(', ')}\n`
-    if (foundType.length > 0) analysis += `   - 촬영 유형: ${foundType.join(', ')}\n`
-    if (foundTiming.length > 0) analysis += `   - 시점: ${foundTiming.join(', ')}\n`
-    if (foundClinical.length === 0 && foundType.length === 0 && foundTiming.length === 0) {
-      analysis += `   - 참고 이미지 (파일명에서 추가 정보 유추 불가)\n`
-    }
-
-    return analysis
+    return { originalName: name, order, phase, description: descPart, clinicalInfo, imagingType, toothNumbers }
   })
 
-  // 임상 모드일 때 소견 기반 서술 지시 추가
+  // 순번 기준 오름차순 정렬
+  parsed.sort((a, b) => a.order - b.order)
+
+  // 시점별 그룹핑 (글 구조 자동 생성)
+  const groups: Record<string, ParsedImage[]> = { '초진': [], '치료전': [], '치료중': [], '치료후': [], '기타': [] }
+  for (const img of parsed) {
+    groups[img.phase].push(img)
+  }
+  const introImages = [...groups['초진'], ...groups['치료전']]
+  const processImages = groups['치료중']
+  const resultImages = groups['치료후']
+  const hasStructuredOrder = parsed.some(p => p.order !== 999) // 순번이 있는 파일인지
+
+  // 개별 이미지 분석 출력
+  const analyzed = parsed.map((img, idx) => {
+    let line = `${idx + 1}. [IMAGE_${idx + 1}] (순번 ${img.order !== 999 ? String(img.order).padStart(2, '0') : '-'}) **${img.phase}** | ${img.originalName}\n`
+    if (img.toothNumbers.length > 0) line += `   - 부위: ${img.toothNumbers.join(', ')}\n`
+    if (img.clinicalInfo.length > 0) line += `   - 임상: ${img.clinicalInfo.join(', ')}\n`
+    if (img.imagingType.length > 0) line += `   - 촬영: ${img.imagingType.join(', ')}\n`
+    if (img.description) line += `   - 설명: ${img.description}\n`
+    return line
+  })
+
+  // 글 구조 지시 (순번이 있는 경우 자동 섹션 분배)
+  let structureDirective = ''
+  if (hasStructuredOrder && parsed.length >= 5) {
+    structureDirective = `
+## 📐 이미지 순번 기반 글 구조 (자동 생성)
+
+파일명의 순번과 시점(초진/치료전/치료중/치료후)을 분석하여 글 흐름을 자동 구성했습니다.
+**반드시 아래 순서대로 글을 전개하세요!**
+
+### 🔹 도입부 (서론) — 초진/치료 전 상태 설명
+${introImages.length > 0 ? introImages.map((img, i) => `- [IMAGE_${parsed.indexOf(img) + 1}] ${img.description || img.originalName}`).join('\n') : '- (해당 이미지 없음 — 일반적인 증상/상황 설명으로 시작)'}
+→ 이 이미지들을 참고하여 초진 상태, 주요 소견, 치료 계획을 서술하세요.
+→ "사진을 보시면~", "방사선 사진상~" 형태로 독자가 이미지를 참고하도록 유도하세요.
+
+### 🔹 전개 (본론) — 치료 과정 상세 묘사
+${processImages.length > 0 ? processImages.map((img, i) => `- [IMAGE_${parsed.indexOf(img) + 1}] ${img.description || img.originalName}`).join('\n') : '- (해당 이미지 없음)'}
+→ 순번 순서대로 치료 과정을 시간 흐름에 맞춰 서술하세요.
+→ 각 단계를 소제목으로 구분하고, 해당 이미지를 소제목 아래에 배치하세요.
+→ "다음 사진에서 확인하실 수 있듯이~" 형태로 이미지 참조를 유도하세요.
+
+### 🔹 결말 (결론) — 치료 완료/최종 상태
+${resultImages.length > 0 ? resultImages.map((img, i) => `- [IMAGE_${parsed.indexOf(img) + 1}] ${img.description || img.originalName}`).join('\n') : '- (해당 이미지 없음)'}
+→ 최종 보철/수복 완료 상태를 설명하고, 사후 관리를 안내하세요.
+`
+  }
+
+  // 임상 모드 추가 지시
   const clinicalInstruction = writingMode === 'expert' ? `
 **⚠️ 임상 모드 필수 지시:**
-위 파일명에서 추출된 임상 정보를 글의 핵심으로 활용하세요!
-- 부위/소견 정보가 있으면 → "방사선 사진상 [부위]에 [소견]이 관찰됩니다" 형태로 서술
-- 치료 전/후 이미지가 있으면 → 치료 과정의 흐름에 맞춰 배치
-- 촬영 유형이 있으면 → "X-ray상 ~", "CT상 ~" 형태로 소견 기술
+- 파일명에서 추출된 임상 정보를 글의 핵심으로 활용하세요!
+- 부위/소견 정보 → "방사선 사진상 [부위]에 [소견]이 관찰됩니다" 형태로 서술
+- 촬영 유형 → "X-ray상 ~", "CT상 ~" 형태로 소견 기술
+- "사진을 보시면~", "다음 사진에서 확인하실 수 있듯이~" 형태로 이미지 참조 유도
 - ❌ 파일명에 정보가 없는데 소견을 지어내지 마세요
 - ✅ 파일명의 임상 키워드를 최대한 활용해서 임상 소견 기반 서술을 작성하세요
 ` : `
 **이미지 활용 지시:**
-파일명에서 파악되는 정보를 참고하여 적절한 위치에 배치하세요.
+- 파일명에서 파악되는 정보를 참고하여 적절한 위치에 배치하세요.
+- "사진을 보시면~" 형태로 독자가 이미지를 참고하도록 유도하세요.
+`
+
+  // 용어 치환 안내
+  const termReminder = `
+**⚠️ 필수 용어 치환:**
+- 크라운(Crown) → **지르코니아 보철**
+- 임시 치아/임시 보철 → **심미 수복물**
+- 힐링 어버트먼트(Healing Abutment) → **보강관**
+- 임플란트 나사/뿌리 → **픽스쳐**
+- 뼈이식 → **골이식**
+- 잇몸뼈 → **치조골**
 `
 
   return `
 ## 📷 이미지 임상 분석 & 배치 안내
-아래 이미지의 파일명에서 임상 정보를 추출했습니다.
-이미지는 \`[IMAGE_${'{숫자}'}\]\` 형식으로 표시합니다.
+이미지 ${parsed.length}장을 분석했습니다.${hasStructuredOrder ? ' (순번 기반 정렬 완료)' : ''}
 
 ${analyzed.join('\n')}
+${structureDirective}
 ${clinicalInstruction}
+${termReminder}
 **배치 규칙:**
-- 치료 전 이미지: 소견/증상 설명 섹션에 배치
-- 치료 후 이미지: 치료 결과/예후 섹션에 배치
-- X-ray/CT 이미지: 진단 소견 섹션에 배치 (alt 텍스트에 소견 포함)
-- 과정 이미지: 치료 단계 설명 부분에 배치
-- 이미지 Alt 텍스트 필수: 📷 [이미지: {설명}] (alt: {키워드 포함 설명})
+- 이미지는 반드시 순번 순서대로 글에 배치하세요
+- 각 이미지 위치: 📷 [이미지 위치: {설명}] (alt: {키워드 포함 설명})
+- 치료 전 이미지 → 소견/증상 설명 섹션에 배치
+- 치료 과정 이미지 → 해당 치료 단계 설명 바로 아래에 배치
+- 치료 후 이미지 → 치료 결과/예후 섹션에 배치
+- X-ray/CT 이미지 → 진단 소견 섹션에 배치
 `
 }
 

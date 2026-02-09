@@ -116,7 +116,7 @@ export default function DashboardPage() {
       {/* 버전 표시 */}
       <div className="mb-4 text-center">
         <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-gray-100 text-gray-500 text-xs font-mono rounded-full">
-          v2.5.0 — 배치 다양성 시스템 + ~요 어미 3중 방어 + 모드 규칙 통일
+          v2.6.0 — 이미지 순번 기반 글 구조 자동화 + 용어 치환 강화
         </span>
       </div>
 
