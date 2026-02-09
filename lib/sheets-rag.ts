@@ -544,13 +544,14 @@ export async function findClinicTopicPosts(
     // 빈 내용 스킵
     if (!content || content.length < 100) continue
 
-    // 치과명이 일치하는지 확인 (trim 적용)
+    // 치과명 매칭 (정확 매칭 우선, 부분 매칭 폴백)
     const clinicNameTrimmed = clinicName.trim()
-    const clinicMatch = rowClinic.includes(clinicNameTrimmed) || clinicNameTrimmed.includes(rowClinic)
-    if (!clinicMatch) continue
+    const exactClinicMatch = rowClinic === clinicNameTrimmed
+    const partialClinicMatch = rowClinic.includes(clinicNameTrimmed) || clinicNameTrimmed.includes(rowClinic)
+    if (!exactClinicMatch && !partialClinicMatch) continue
 
-    // 점수 계산
-    let score = 0.5 // 치과명 일치 기본 점수
+    // 점수 계산 (정확 매칭: 0.7, 부분 매칭: 0.3)
+    let score = exactClinicMatch ? 0.7 : 0.3
 
     // 1. 카테고리 매칭
     const rowCategory = getCategory(rowTopic)
@@ -564,7 +565,8 @@ export async function findClinicTopicPosts(
     results.push({ clinic: rowClinic, topic: rowTopic, content, score })
   }
 
-  console.log(`[findClinicTopicPosts] ${results.length}개 매칭됨`)
+  const exactCount = results.filter(r => r.clinic === clinicName.trim()).length
+  console.log(`[findClinicTopicPosts] ${results.length}개 매칭 (정확: ${exactCount}, 부분: ${results.length - exactCount})`)
 
   // 점수 순 정렬
   results.sort((a, b) => b.score - a.score)
@@ -686,8 +688,10 @@ export async function extractUsedKeywords(clinicName: string): Promise<string[]>
     const rowTopic = (row[2] || '').trim()
     const region = (row[3] || '').trim()
 
-    // 치과명 일치
-    if (!rowClinic.includes(clinicNameTrimmed) && !clinicNameTrimmed.includes(rowClinic)) continue
+    // 치과명 일치 (정확 매칭 우선)
+    const exactMatch = rowClinic === clinicNameTrimmed
+    const partialMatch = rowClinic.includes(clinicNameTrimmed) || clinicNameTrimmed.includes(rowClinic)
+    if (!exactMatch && !partialMatch) continue
 
     // 지역+치과명 조합
     if (region && rowClinic) {

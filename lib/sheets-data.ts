@@ -75,7 +75,7 @@ export async function getSheetData(): Promise<SheetData> {
 
   try {
     // Google Sheets API v4 - 탭 자동 탐색
-    // A:날짜, B:치과명, C:치료, D:지역, E:원장님
+    // A:날짜, B:치과명, C:주제, D:지역, E:원장님
     const rows = await fetchWithTabFallback(sheetId, apiKey, 'A2:E')
 
     // 치과 상세정보 맵 (중복 제거용)
@@ -84,7 +84,7 @@ export async function getSheetData(): Promise<SheetData> {
 
     for (const row of rows) {
       const clinic = row[1]?.trim() // B열: 치과명
-      const treatment = row[2]?.trim() // C열: 치료
+      const treatment = row[2]?.trim() // C열: 주제
       const region = row[3]?.trim() || '' // D열: 지역
       const doctorName = row[4]?.trim() || '' // E열: 원장님
 

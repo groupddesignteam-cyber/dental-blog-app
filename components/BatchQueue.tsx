@@ -27,7 +27,7 @@ interface ClinicPreset {
   doctorName: string
 }
 
-// 기본 치료 목록
+// 기본 주제 목록
 const TREATMENTS = [
   '임플란트',
   '신경치료',
@@ -431,7 +431,7 @@ export default function BatchQueue({ onResultsReady }: Props) {
   // 치과명 목록
   const clinicNames = clinicPresets.map(c => c.name)
 
-  // 치료 목록 (시트 + 기본)
+  // 주제 목록 (시트 + 기본)
   const allTreatments = [...new Set([...sheetTreatments, ...TREATMENTS])].sort()
 
   // 치과 선택 핸들러
@@ -448,7 +448,7 @@ export default function BatchQueue({ onResultsReady }: Props) {
   // 케이스 추가
   const addCase = () => {
     if (!selectedClinic || !selectedTopic) {
-      alert('치과와 치료를 선택해주세요.')
+      alert('치과명과 주제를 선택해주세요.')
       return
     }
 
@@ -997,7 +997,7 @@ export default function BatchQueue({ onResultsReady }: Props) {
                     <div>
                       <p className="font-bold text-gray-800">케이스 등록</p>
                       <ul className="mt-2 space-y-1 text-gray-600">
-                        <li>• 치과 선택 → 치료 선택 → 메모 입력</li>
+                        <li>• 치과명 선택 → 주제 선택 → 메모 입력</li>
                         <li>• 이미지를 카테고리별 칸에 드래그 앤 드랍</li>
                         <li>• (치료전/치료후/X-ray/CT/과정/기타)</li>
                         <li>• &quot;큐에 추가&quot; 클릭</li>
@@ -1119,10 +1119,10 @@ export default function BatchQueue({ onResultsReady }: Props) {
         <h3 className="text-lg font-semibold text-gray-900 mb-4">➕ 케이스 추가</h3>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-          {/* 치과 선택 (검색 가능) */}
+          {/* 치과명 선택 (검색 가능) */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              치과 <span className="text-red-500">*</span>
+              치과명 <span className="text-red-500">*</span>
             </label>
             {isLoadingPresets ? (
               <div className="w-full px-3 py-2 border border-gray-300 rounded-xl bg-gray-50 text-gray-500">
@@ -1139,16 +1139,16 @@ export default function BatchQueue({ onResultsReady }: Props) {
             )}
           </div>
 
-          {/* 치료 선택 (검색 가능) */}
+          {/* 주제 선택 (검색 가능) */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              치료 <span className="text-red-500">*</span>
+              주제 <span className="text-red-500">*</span>
             </label>
             <SearchableSelect
               options={allTreatments}
               value={selectedTopic}
               onChange={setSelectedTopic}
-              placeholder="치료 검색..."
+              placeholder="주제 검색..."
               allowCustom
             />
           </div>
@@ -1466,14 +1466,14 @@ export default function BatchQueue({ onResultsReady }: Props) {
                 {editingPendingId === caseItem.id && caseItem.status === 'pending' && (
                   <div className="border-t border-gray-200 p-4 bg-white space-y-3">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      {/* 치료 선택 */}
+                      {/* 주제 선택 */}
                       <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">치료</label>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">주제</label>
                         <SearchableSelect
                           options={allTreatments}
                           value={pendingEditFields.topic}
                           onChange={(v) => setPendingEditFields(prev => ({ ...prev, topic: v }))}
-                          placeholder="치료 검색..."
+                          placeholder="주제 검색..."
                           allowCustom
                         />
                       </div>
