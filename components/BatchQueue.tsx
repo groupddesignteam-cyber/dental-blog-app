@@ -13,6 +13,7 @@ interface BlogCase {
   topic: string
   memo: string
   writingMode: WritingMode
+  mainKeyword?: string // 메인키워드 (사용자 직접 입력)
   images?: UploadedImage[]
   status: 'pending' | 'generating' | 'completed' | 'error'
   result?: GenerateResult
@@ -222,6 +223,7 @@ export default function BatchQueue({ onResultsReady }: Props) {
   const [selectedClinic, setSelectedClinic] = useState<ClinicPreset | null>(null)
   const [selectedTopic, setSelectedTopic] = useState('')
   const [memo, setMemo] = useState('')
+  const [mainKeyword, setMainKeyword] = useState('')
 
   // 카테고리별 이미지 상태
   const [imagesByCategory, setImagesByCategory] = useState<Record<ImageTag, UploadedImage[]>>({
@@ -450,12 +452,14 @@ export default function BatchQueue({ onResultsReady }: Props) {
       topic: selectedTopic,
       memo: memo.trim(),
       writingMode: postingMode,
+      mainKeyword: mainKeyword.trim() || undefined,
       images: allImages.length > 0 ? allImages : undefined,
       status: 'pending',
     }
 
     setCases(prev => [...prev, newCase])
     setMemo('')
+    setMainKeyword('')
     // 모든 카테고리 이미지 초기화
     setImagesByCategory({
       before: [],
@@ -602,6 +606,7 @@ export default function BatchQueue({ onResultsReady }: Props) {
         treatment: `${caseItem.topic} 치료`,
         model,
         writingMode: caseItem.writingMode,
+        mainKeyword: caseItem.mainKeyword || undefined,
         images: caseItem.images?.map((img, i) => ({
           name: buildImageNameWithTag(img, i),
           tag: img.tag,
@@ -1121,6 +1126,43 @@ export default function BatchQueue({ onResultsReady }: Props) {
           </div>
         </div>
 
+        {/* 메인키워드 입력 (3열 아래에 full-width) */}
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            🎯 메인키워드 (선택)
+            <span className="ml-2 text-xs text-gray-400 font-normal">제목 포함 7회 배치 · 미입력 시 자동 생성</span>
+          </label>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={mainKeyword}
+              onChange={(e) => setMainKeyword(e.target.value)}
+              placeholder={selectedClinic?.region && selectedTopic
+                ? `예: ${selectedClinic.region} ${selectedClinic.name}  또는  ${selectedClinic.region} ${selectedTopic}`
+                : '예: 부평 더굿모닝치과  또는  부평 임플란트'}
+              className="flex-1 px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500"
+            />
+            {selectedClinic?.region && selectedClinic?.name && (
+              <button
+                type="button"
+                onClick={() => setMainKeyword(`${selectedClinic.region} ${selectedClinic.name}`)}
+                className="px-3 py-2 text-xs bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100 whitespace-nowrap border border-blue-200"
+              >
+                지역+치과명
+              </button>
+            )}
+            {selectedClinic?.region && selectedTopic && (
+              <button
+                type="button"
+                onClick={() => setMainKeyword(`${selectedClinic.region} ${selectedTopic}`)}
+                className="px-3 py-2 text-xs bg-green-50 text-green-600 rounded-xl hover:bg-green-100 whitespace-nowrap border border-green-200"
+              >
+                지역+진료
+              </button>
+            )}
+          </div>
+        </div>
+
         {/* 카테고리별 이미지 업로드 */}
         <div className="mb-4">
           <label className="block text-sm font-medium text-gray-700 mb-3">
@@ -1308,6 +1350,11 @@ export default function BatchQueue({ onResultsReady }: Props) {
                     >
                       {caseItem.writingMode === 'expert' ? '🏥 임상' : '📚 정보성'}
                     </button>
+                    {caseItem.mainKeyword && (
+                      <span className="px-2 py-0.5 bg-orange-100 text-orange-700 text-xs rounded-lg">
+                        🎯 {caseItem.mainKeyword}
+                      </span>
+                    )}
                     {caseItem.memo && (
                       <span className="text-sm text-gray-500 truncate max-w-[200px]">{caseItem.memo}</span>
                     )}

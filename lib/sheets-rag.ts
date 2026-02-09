@@ -275,9 +275,17 @@ export function analyzePostPatterns(posts: SimilarPost[]): PatternAnalysis {
   return analysis
 }
 
-// RAG 컨텍스트 생성
-export async function generateRAGContext(queryTopic: string): Promise<string> {
-  const similarPosts = await findSimilarPosts(queryTopic)
+// RAG 컨텍스트 생성 (치과명이 있으면 해당 치과 글 우선 참조)
+export async function generateRAGContext(queryTopic: string, clinicName?: string): Promise<string> {
+  // 치과명이 있으면 해당 치과 글 우선 검색
+  let similarPosts: SimilarPost[] = []
+  if (clinicName) {
+    similarPosts = await findClinicTopicPosts(clinicName, queryTopic)
+  }
+  // 치과 글이 없으면 전체 DB에서 주제 유사도로 검색
+  if (similarPosts.length === 0) {
+    similarPosts = await findSimilarPosts(queryTopic)
+  }
 
   if (similarPosts.length === 0) {
     return '[참조 가능한 기존 글 없음]'
@@ -288,7 +296,7 @@ export async function generateRAGContext(queryTopic: string): Promise<string> {
   let context = `
 ## 📚 기존 글 DB 참조 결과
 
-### 유사 주제 글 ${similarPosts.length}개 발견
+### ${clinicName ? `${clinicName} ` : ''}유사 주제 글 ${similarPosts.length}개 발견
 
 `
 
@@ -508,6 +516,34 @@ export async function findClinicTopicPosts(
   return results
 }
 
+// 치과별 자주 쓰는 치료 키워드 추출
+function extractFrequentKeywords(content: string): string[] {
+  const keywordPatterns: Record<string, RegExp> = {
+    '수면마취': /수면\s?마취|수면\s?진정|진정\s?마취|정맥\s?진정|수면\s?치료/g,
+    '골이식': /골이식|뼈이식|골\s?보충|골\s?대체/g,
+    '상악동거상술': /상악동\s?거상|상악동\s?수술|사이너스\s?리프트/g,
+    '즉시식립': /즉시\s?식립|즉시\s?임플란트|당일\s?식립/g,
+    'GBR': /GBR|골유도\s?재생/g,
+    '네비게이션': /네비게이션|디지털\s?가이드|가이드\s?수술/g,
+    '오스템': /오스템|오스\s?템/g,
+    '디지털': /디지털\s?스캔|디지털\s?인상|구강\s?스캐너/g,
+    '무절개': /무절개|절개\s?없이|플랩리스/g,
+    '전신마취': /전신\s?마취/g,
+    '잇몸이식': /잇몸\s?이식|결합조직\s?이식|유리\s?치은/g,
+    '치조골보존술': /치조골\s?보존|소켓\s?보존|발치\s?후\s?골보존/g,
+  }
+
+  const found: { keyword: string; count: number }[] = []
+  for (const [keyword, pattern] of Object.entries(keywordPatterns)) {
+    const matches = content.match(pattern) || []
+    if (matches.length >= 2) {
+      found.push({ keyword, count: matches.length })
+    }
+  }
+
+  return found.sort((a, b) => b.count - a.count).map(f => `${f.keyword}(${f.count}회)`)
+}
+
 // 치과별 페르소나 추출 (강화된 버전 - 모든 글 참조)
 export async function extractClinicPersona(
   clinicName: string,
@@ -540,8 +576,19 @@ export async function extractClinicPersona(
     posts.reduce((sum, p) => sum + p.content.length, 0) / posts.length
   )
 
+  // 치료 특화 키워드 추출 (수면마취, 골이식 등 자주 쓰는 키워드)
+  const frequentKeywords = extractFrequentKeywords(allContent)
+
   // 샘플 콘텐츠 확대 - 여러 글의 핵심 부분 수집
   let sampleContent = ''
+
+  // 자주 쓰는 치료 키워드 정보 추가
+  if (frequentKeywords.length > 0) {
+    sampleContent += `\n### ⚡ ${clinicName} 자주 사용하는 치료 키워드\n`
+    sampleContent += frequentKeywords.join(', ')
+    sampleContent += `\n→ 위 키워드가 기존 글에서 빈번하게 사용됩니다. 새 글에서도 관련 내용을 적극 반영하세요!\n---\n`
+  }
+
   for (let i = 0; i < Math.min(posts.length, 3); i++) {
     const post = posts[i]
     // 각 글에서 중요 부분 추출 (서문, 본문 일부, 마무리)
@@ -564,7 +611,7 @@ export async function extractClinicPersona(
     topic,
     writingStyle,
     sampleIntros,
-    sampleContent: sampleContent.slice(0, 5000), // 최대 5000자까지 샘플 확대
+    sampleContent: sampleContent.slice(0, 6000), // 최대 6000자까지 샘플 확대
     avgLength,
     postCount: posts.length,
   }
@@ -630,7 +677,8 @@ ${persona.writingStyle.closings.length > 0
   ? persona.writingStyle.closings.slice(0, 3).map((c, i) => `${i + 1}. "${c}"`).join('\n')
   : '1. "[치과명] [원장님]이었습니다. 감사합니다."'}
 
-### 5. 서문 샘플 (구조 참고, 어미는 글쓰기 모드 따를 것)
+### 5. 서문 샘플 (⚠️ 구조/흐름을 반드시 참고! 어미만 글쓰기 모드 따를 것)
+⚠️ 아래 서문의 **구조, 문장 길이, 도입 방식, 공감 표현 순서**를 최대한 유사하게 작성하세요!
 ${cleanedSampleIntros.slice(0, 3).map((intro, i) => `
 **서문 샘플 ${i + 1}:**
 \`\`\`

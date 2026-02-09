@@ -62,6 +62,8 @@ export interface GenerateFormData {
   writingMode?: WritingMode
   // 배치 생성 시 도입부 다양성 힌트
   diversityHints?: BatchDiversityHints
+  // 메인키워드 (사용자 직접 입력, 예: "부평 임플란트", "부평 더굿모닝치과")
+  mainKeyword?: string
 }
 
 // 키워드 분석 결과 타입 (클라이언트용)
