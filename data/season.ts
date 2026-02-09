@@ -153,6 +153,24 @@ export function getSeasonHook(topic?: string): string {
   return hooks[Math.floor(Math.random() * hooks.length)]
 }
 
+// 인덱스 기반 시즌 훅 선택 (배치 다양성용)
+export function getSeasonHookByIndex(topic?: string, index?: number): string {
+  if (index === undefined) return getSeasonHook(topic)
+
+  const month = new Date().getMonth() + 1
+  const seasonData = SEASON_DATA[month] || SEASON_DATA[1]
+  let hooks = seasonData.hooks
+
+  if (topic && SENIOR_TOPICS.some(t => topic.includes(t))) {
+    const filtered = hooks.filter(hook =>
+      !YOUNG_KEYWORDS.some(keyword => hook.includes(keyword))
+    )
+    if (filtered.length > 0) hooks = filtered
+  }
+
+  return hooks[index % hooks.length]
+}
+
 // 현재 월의 키워드 가져오기
 export function getSeasonKeywords(): string[] {
   const month = new Date().getMonth() + 1

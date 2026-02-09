@@ -2,14 +2,14 @@ import Anthropic from '@anthropic-ai/sdk'
 import OpenAI from 'openai'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { NextRequest } from 'next/server'
-import { GenerateFormData, LLMModel, WritingMode } from '@/types'
+import { GenerateFormData, LLMModel, WritingMode, BatchDiversityHints } from '@/types'
 
 // 데이터 파일들
 import { TERM_REPLACEMENTS, FORBIDDEN_WORDS, MEDICAL_FACTS, METAPHORS, getMetaphorText, formatMedicalInfoForPrompt } from '@/data/knowledge'
 import { REQUIRED_DISCLAIMERS, getDisclaimer, checkForbiddenPatterns } from '@/data/medical-law'
 import { CONTENT_RULES, generateHashtags } from '@/data/seo'
-import { getSeasonHook } from '@/data/season'
-import { INTRO_PATTERNS, BODY_PATTERNS, CLOSING_PATTERNS, TOPIC_PATTERNS, TRANSITION_PHRASES, EMPATHY_PHRASES } from '@/data/patterns'
+import { getSeasonHook, getSeasonHookByIndex } from '@/data/season'
+import { INTRO_PATTERNS, BODY_PATTERNS, CLOSING_PATTERNS, TOPIC_PATTERNS, TRANSITION_PHRASES, EMPATHY_PHRASES, CLOSING_CTA_PHRASES, getGreetingByIndex, getEmpathyHookByIndex, getTransitionByIndex, getTransitionPhraseByIndex, getEmpathyPhraseByIndex, getClosingCtaByIndex } from '@/data/patterns'
 import { generateMainKeyword, suggestSubKeywords } from '@/data/keywords'
 import { getSynonymInstruction } from '@/data/synonyms'
 import { formatLineBreaks } from '@/lib/line-formatter'
@@ -204,6 +204,78 @@ function getWritingModePrompt(mode?: WritingMode): string {
   return getWritingModePrompt('expert')
 }
 
+// 배치 다양성 지시 프롬프트 생성
+function buildDiversityDirective(hints: BatchDiversityHints): string {
+  const greeting = getGreetingByIndex(hints.greetingIndex)
+  const empathyHook = getEmpathyHookByIndex(hints.empathyHookIndex)
+  const transition = getTransitionByIndex(hints.transitionIndex)
+  const empathyPhrase = getEmpathyPhraseByIndex(hints.empathyPhraseIndex)
+  const transitionPhrase = getTransitionPhraseByIndex(hints.transitionPhraseIndex)
+  const closingCta = getClosingCtaByIndex(hints.closingCtaIndex)
+
+  let directive = `
+## 🎯 글 다양성 지시 (배치 ${hints.batchIndex + 1}/${hints.totalBatchSize}번째)
+
+다른 글과 구분되는 도입부를 위해 아래 패턴을 **반드시** 사용하세요:
+
+### 서문 인사말 (첫 문장):
+"${greeting}" → [지역], [치과명], [이름]에 맞게 치환하여 사용
+
+### 공감 훅 (인사 직후 2~3문장):
+"${empathyHook}" → [증상], [질문], [치료], [상황]에 맞게 치환
+
+### 주제 전환 (공감 훅 뒤):
+"${transition}" → [주제], [질문]에 맞게 치환
+
+### 본론 전환 (섹션 2 시작):
+"${transitionPhrase}"
+
+### 공감 표현 (서론 내 사용):
+"${empathyPhrase}"
+
+### 마무리 권유 (결론):
+"${closingCta}"
+
+⚠️ 위 6개 패턴은 이 글에 고유 할당된 것입니다. 다른 패턴으로 대체하지 마세요!
+
+### ⚠️ 어미 재확인 (배치 글마다 반드시 체크!)
+🚫 절대 금지: ~해요, ~거든요, ~있어요, ~드려요, ~할게요, ~볼게요
+✅ 시스템 프롬프트의 "글쓰기 모드" 어미 규칙을 반드시 따르세요!`
+
+  // 본론 구조 다양화 (batchIndex 기반)
+  const bodyStructures = [
+    '본론 섹션 1을 "원인/메커니즘" 중심으로, 섹션 2를 "치료 과정 단계별 설명"으로 구성하세요.',
+    '본론 섹션 1을 "증상별 분류/비교" 중심으로, 섹션 2를 "치료 옵션 장단점 비교표"로 구성하세요.',
+    '본론 섹션 1을 "Q&A 형태의 궁금증 해소" 중심으로, 섹션 2를 "치료 후 관리/예후"로 구성하세요.',
+    '본론 섹션 1을 "발생 원인과 진행 단계" 중심으로, 섹션 2를 "예방법과 자가 관리 팁"으로 구성하세요.',
+    '본론 섹션 1을 "진단 방법과 검사 과정" 중심으로, 섹션 2를 "치료 방법별 상세 비교"로 구성하세요.',
+  ]
+  directive += `\n\n### 본론 구조 (이 글의 지정 구조):\n${bodyStructures[hints.batchIndex % bodyStructures.length]}`
+
+  // 결론 톤 다양화
+  const closingTones = [
+    '결론은 "안심" 톤으로 마무리하세요. "지나치게 염려하지 않으셔도 됩니다" 형태.',
+    '결론은 "행동 촉구" 톤으로 마무리하세요. "정기 검진을 받아보시길 권장합니다" 형태.',
+    '결론은 "습관 연결" 톤으로 마무리하세요. "일상 속 작은 습관이 큰 차이를 만듭니다" 형태.',
+    '결론은 "요약 정리" 톤으로 마무리하세요. "오늘 말씀드린 핵심을 정리하면~" 형태.',
+    '결론은 "공감 마무리" 톤으로 마무리하세요. "건강한 미소를 되찾으시길 바랍니다" 형태.',
+  ]
+  directive += `\n\n### 결론 톤 (이 글의 지정 톤):\n${closingTones[hints.batchIndex % closingTones.length]}`
+
+  if (hints.introHookType) {
+    const hookDesc: Record<string, string> = {
+      '체험공감': '"혹시 ~하신 적 있으신가요?" 형태의 체험 공감 질문으로 시작하세요.',
+      '숫자통계': '"약 ~%의 분들이 ~" 형태의 통계/수치로 시작하세요.',
+      '일상상황': '"~할 때 ~하신 분들이 적지 않으시죠." 형태의 일상 상황으로 시작하세요.',
+      '오해반전': '"~라고 생각하시죠? 사실은 조금 다릅니다." 형태의 오해 반전으로 시작하세요.',
+      '계절시기': '시즌 훅과 자연스럽게 연결하여 시작하세요.',
+    }
+    directive += `\n\n### 정보성 도입부 유형: ${hints.introHookType}\n${hookDesc[hints.introHookType] || ''}`
+  }
+
+  return directive
+}
+
 // 통합 시스템 프롬프트 생성
 function buildSystemPrompt(topic: string, persona?: ClinicPersona | null, writingMode?: WritingMode): string {
   const topicPatterns = TOPIC_PATTERNS[topic] || []
@@ -218,9 +290,8 @@ function buildSystemPrompt(topic: string, persona?: ClinicPersona | null, writin
     : `## 페르소나
 10년 차 치과 전문의
 - 전문 용어를 쓰되, 일반인도 이해할 수 있도록 부연 설명 제공
-- 기본 어미: ~입니다, ~됩니다, ~있습니다, ~바랍니다 (90% 이상)
-- 전환/참여 유도 시: ~하죠 (10% 이하)
-- 🚫 절대 금지 어미: ~해요, ~거든요, ~인데요, ~있어요, ~드려요`
+- ⚠️ 어미 규칙은 아래 "글쓰기 모드" 섹션의 규칙을 따르세요!
+- 🚫 공통 절대 금지 어미: ~해요, ~거든요, ~있어요, ~드려요, ~할게요, ~볼게요`
 
   return `당신은 치과 마케팅 전문 블로그 작성 AI입니다.
 의료광고법 100% 준수 + 네이버 SEO 최적화 + 검증된 글쓰기 패턴을 적용합니다.
@@ -668,7 +739,8 @@ function buildUserPrompt(
   trendAnalysis: string,
   popularKeywords: string[],
   imageNames: string[],
-  selectedKeywords?: string[]
+  selectedKeywords?: string[],
+  diversityDirective?: string
 ): string {
   const imageSection = analyzeImageNames(imageNames, data.writingMode)
 
@@ -714,6 +786,8 @@ ${selectedKeywords && selectedKeywords.length > 0 ? `- ⭐ 사용자 선택 키�
 
 ## 시즌 훅 (서문에 자연스럽게 활용)
 "${seasonHook}"
+
+${diversityDirective || ''}
 
 ${ragContext !== '[기존 글 DB 참조 불가]' && ragContext !== '[참조 가능한 기존 글 없음]' ? `
 ## 기존 글 패턴 참조
@@ -770,7 +844,7 @@ ${formatMedicalInfoForPrompt(data.topic)}
 4. **소제목**: 300~400자마다 ##(H2) 소제목 삽입
 5. **이모지**: 소제목에만 (✅🔹💚), 본문 중간에는 자제
 6. **불릿 리스트**: 나열형 정보는 반드시 불릿(- 또는 ✅🔹💚) 형태
-7. **어미**: ~입니다, ~됩니다 (기본) / ~하죠 (10% 이하) / 🚫 금지: ~해요, ~거든요
+7. **어미**: 반드시 시스템 프롬프트의 "글쓰기 모드" 어미 규칙을 따르세요! 🚫 절대 금지: ~해요, ~거든요, ~있어요, ~드려요
 8. **"됩니다" 주의**: "해야 됩니다" → "해야 합니다", "되야" → "되어야"
 
 ### 키워드 배치 규칙 (분산 필수!)
@@ -919,7 +993,9 @@ export async function POST(request: NextRequest) {
     // ============================================================
     // 🚀 최적화: 동기 작업 먼저 처리 (0ms)
     // ============================================================
-    const seasonHook = getSeasonHook(data.topic)
+    const seasonHook = data.diversityHints
+      ? getSeasonHookByIndex(data.topic, data.diversityHints.seasonHookIndex)
+      : getSeasonHook(data.topic)
     const mainKeyword = generateMainKeyword(data.region, data.topic)
     const subKeywords = suggestSubKeywords(data.topic)
     const popularKeywords = getMonthlyPopularKeywords()
@@ -987,10 +1063,16 @@ export async function POST(request: NextRequest) {
 
     // 프롬프트 빌드 (치과별 페르소나 + 글쓰기 모드 적용)
     const systemPrompt = buildSystemPrompt(data.topic, clinicPersona, data.writingMode)
+    // 배치 다양성 지시 생성
+    const diversityDirective = data.diversityHints
+      ? buildDiversityDirective(data.diversityHints)
+      : ''
+
     const userPrompt = buildUserPrompt(
       data, mainKeyword, subKeywords, hashtags, seasonHook,
       ragContext, trendAnalysis, popularKeywords, imageNames,
-      data.selectedKeywords // 사용자 선택 키워드
+      data.selectedKeywords, // 사용자 선택 키워드
+      diversityDirective     // 배치 다양성 지시
     )
 
     // 스트리밍 응답 생성
@@ -1052,6 +1134,21 @@ export async function POST(request: NextRequest) {
           if (forbiddenViolations.length > 0) {
             console.warn(`[Warning] 의료법 위반 표현 발견: ${forbiddenViolations.map(v => v.match).join(', ')}`)
             warnings.push(`⚠️ 의료법 위반 가능 표현: ${forbiddenViolations.map(v => `"${v.match}" (${v.reason})`).join(', ')}`)
+          }
+
+          // ~요 어미 검증 (금지 어미 사후 검사)
+          const forbiddenEndings = ['해요', '거든요', '있어요', '드려요', '할게요', '볼게요', '줄게요']
+          const foundEndings: string[] = []
+          for (const ending of forbiddenEndings) {
+            const regex = new RegExp(ending, 'g')
+            const matches = content.match(regex)
+            if (matches && matches.length > 0) {
+              foundEndings.push(`${ending}(${matches.length}회)`)
+            }
+          }
+          if (foundEndings.length > 0) {
+            console.warn(`[Warning] 금지 어미 ~요 발견: ${foundEndings.join(', ')}`)
+            warnings.push(`🚫 금지 어미(~요) 발견: ${foundEndings.join(', ')} — 수정이 필요합니다`)
           }
 
           // 글자수 경고 (네이버 SEO 기준: 2,500~3,000자 권장)

@@ -570,6 +570,25 @@ export async function extractClinicPersona(
   }
 }
 
+// ~요 어미를 ~다 체로 치환 (페르소나 샘플 정화용)
+function sanitizeEndings(text: string): string {
+  return text
+    .replace(/해요/g, '합니다')
+    .replace(/거든요/g, '기 때문입니다')
+    .replace(/있어요/g, '있습니다')
+    .replace(/드려요/g, '드립니다')
+    .replace(/할게요/g, '하겠습니다')
+    .replace(/볼게요/g, '보겠습니다')
+    .replace(/인데요/g, '인데,')
+    .replace(/하세요/g, '하시길 바랍니다')
+    .replace(/되세요/g, '되시길 바랍니다')
+    .replace(/네요/g, '습니다')
+    .replace(/줄게요/g, '주겠습니다')
+    .replace(/갈게요/g, '가겠습니다')
+    .replace(/같아요/g, '같습니다')
+    .replace(/싶어요/g, '싶습니다')
+}
+
 // 페르소나 기반 프롬프트 생성 (강화된 버전)
 export function generatePersonaPrompt(persona: ClinicPersona): string {
   // 문단 길이 분석
@@ -577,6 +596,10 @@ export function generatePersonaPrompt(persona: ClinicPersona): string {
   const avgParagraphLength = paragraphs.length > 0
     ? Math.floor(paragraphs.reduce((sum, p) => sum + p.length, 0) / paragraphs.length)
     : 100
+
+  // ★ 샘플 텍스트에서 ~요 어미를 ~다 체로 정화
+  const cleanedSampleContent = sanitizeEndings(persona.sampleContent)
+  const cleanedSampleIntros = persona.sampleIntros.map(intro => sanitizeEndings(intro))
 
   return `
 ## 🎭 ${persona.clinicName} 글쓰기 스타일 참조
@@ -608,7 +631,7 @@ ${persona.writingStyle.closings.length > 0
   : '1. "[치과명] [원장님]이었습니다. 감사합니다."'}
 
 ### 5. 서문 샘플 (구조 참고, 어미는 글쓰기 모드 따를 것)
-${persona.sampleIntros.slice(0, 3).map((intro, i) => `
+${cleanedSampleIntros.slice(0, 3).map((intro, i) => `
 **서문 샘플 ${i + 1}:**
 \`\`\`
 ${intro}
@@ -622,8 +645,9 @@ ${intro}
 아래는 ${persona.clinicName}의 기존 글입니다.
 **글의 구조, 문장 길이, 이모지 사용법, 설명 방식**을 참고하되,
 **어미(~요/~다)**는 반드시 글쓰기 모드의 규칙을 따르세요!
+🚫 아래 샘플에 ~해요, ~거든요 등이 남아있더라도 절대 따라하지 마세요!
 
-${persona.sampleContent}
+${cleanedSampleContent}
 
 ---
 

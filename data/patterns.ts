@@ -265,3 +265,23 @@ export const IMAGE_DESCRIPTION_TEMPLATES: Record<string, string> = {
   diagram: '▶ 치료 과정 설명 일러스트/다이어그램이 들어갈 위치입니다.',
   general: '▶ 관련 참고 이미지가 들어갈 위치입니다.',
 }
+
+// 인덱스 기반 패턴 접근 함수 (배치 다양성용)
+export function getGreetingByIndex(i: number): string {
+  return INTRO_PATTERNS.greeting[i % INTRO_PATTERNS.greeting.length]
+}
+export function getEmpathyHookByIndex(i: number): string {
+  return INTRO_PATTERNS.empathyHooks[i % INTRO_PATTERNS.empathyHooks.length]
+}
+export function getTransitionByIndex(i: number): string {
+  return INTRO_PATTERNS.transition[i % INTRO_PATTERNS.transition.length]
+}
+export function getTransitionPhraseByIndex(i: number): string {
+  return TRANSITION_PHRASES[i % TRANSITION_PHRASES.length]
+}
+export function getEmpathyPhraseByIndex(i: number): string {
+  return EMPATHY_PHRASES[i % EMPATHY_PHRASES.length]
+}
+export function getClosingCtaByIndex(i: number): string {
+  return CLOSING_CTA_PHRASES[i % CLOSING_CTA_PHRASES.length]
+}

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { LLMModel, GenerateResult, UploadedImage, ImageTag, WritingMode } from '@/types'
+import { LLMModel, GenerateResult, UploadedImage, ImageTag, WritingMode, BatchDiversityHints } from '@/types'
 
 // 케이스 타입
 interface BlogCase {
@@ -517,8 +517,59 @@ export default function BatchQueue({ onResultsReady }: Props) {
     return img.name
   }
 
+  // 배치 다양성 힌트 사전 배분 (Shuffle-and-Cycle 알고리즘)
+  const assignDiversityHints = (pendingCases: BlogCase[]): Map<string, BatchDiversityHints> => {
+    const total = pendingCases.length
+    const hints = new Map<string, BatchDiversityHints>()
+
+    const INTRO_HOOK_TYPES = ['체험공감', '숫자통계', '일상상황', '오해반전', '계절시기']
+
+    // 셔플+사이클 분배: poolSize보다 많으면 전체 셔플을 반복 채움
+    function distribute(poolSize: number, count: number): number[] {
+      const result: number[] = []
+      let pool: number[] = []
+      while (result.length < count) {
+        if (pool.length === 0) {
+          pool = Array.from({ length: poolSize }, (_, i) => i)
+          for (let i = pool.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1))
+            ;[pool[i], pool[j]] = [pool[j], pool[i]]
+          }
+        }
+        result.push(pool.shift()!)
+      }
+      return result
+    }
+
+    const greetings = distribute(8, total)
+    const empathyHooks = distribute(8, total)
+    const transitions = distribute(8, total)
+    const seasonHooks = distribute(5, total)
+    const empathyPhrases = distribute(5, total)
+    const transitionPhrases = distribute(10, total)
+    const introHookTypes = distribute(5, total)
+    const closingCtas = distribute(5, total)
+
+    pendingCases.forEach((c, i) => {
+      hints.set(c.id, {
+        batchIndex: i,
+        totalBatchSize: total,
+        greetingIndex: greetings[i],
+        empathyHookIndex: empathyHooks[i],
+        transitionIndex: transitions[i],
+        seasonHookIndex: seasonHooks[i],
+        empathyPhraseIndex: empathyPhrases[i],
+        transitionPhraseIndex: transitionPhrases[i],
+        introHookType: INTRO_HOOK_TYPES[introHookTypes[i]],
+        closingCtaIndex: closingCtas[i],
+      })
+    })
+
+    return hints
+  }
+
   // 단일 케이스 생성
-  const generateSingleCase = async (caseItem: BlogCase): Promise<BlogCase> => {
+  const generateSingleCase = async (caseItem: BlogCase, diversityHints?: BatchDiversityHints): Promise<BlogCase> => {
     try {
       const payload = {
         clinicName: caseItem.clinicName,
@@ -533,6 +584,7 @@ export default function BatchQueue({ onResultsReady }: Props) {
           name: buildImageNameWithTag(img, i),
           tag: img.tag,
         })),
+        diversityHints: diversityHints || undefined,
       }
 
       const response = await fetch('/api/generate', {
@@ -597,7 +649,7 @@ export default function BatchQueue({ onResultsReady }: Props) {
     }
   }
 
-  // 배치 생성
+  // 배치 생성 (다양성 힌트 + 적응적 병렬 처리)
   const generateAll = async () => {
     const pendingCases = cases.filter(c => c.status === 'pending')
     if (pendingCases.length === 0) {
@@ -608,16 +660,22 @@ export default function BatchQueue({ onResultsReady }: Props) {
     setIsGenerating(true)
     setProgress({ current: 0, total: pendingCases.length })
 
+    // ★ 배치 전체에 대해 다양성 힌트 사전 배분
+    const diversityMap = assignDiversityHints(pendingCases)
+
     setCases(prev => prev.map(c =>
       c.status === 'pending' ? { ...c, status: 'generating' as const } : c
     ))
 
-    const batchSize = 2
+    // 적응적 배치 크기: 10개 이하 → 2, 11개 이상 → 3
+    const batchSize = pendingCases.length > 10 ? 3 : 2
+    const delayMs = pendingCases.length > 10 ? 1000 : 500
+
     for (let i = 0; i < pendingCases.length; i += batchSize) {
       const batch = pendingCases.slice(i, i + batchSize)
 
       const results = await Promise.all(
-        batch.map(caseItem => generateSingleCase(caseItem))
+        batch.map(caseItem => generateSingleCase(caseItem, diversityMap.get(caseItem.id)))
       )
 
       setCases(prev => {
@@ -632,6 +690,11 @@ export default function BatchQueue({ onResultsReady }: Props) {
       })
 
       setProgress(prev => ({ ...prev, current: Math.min(i + batchSize, pendingCases.length) }))
+
+      // 배치 간 딜레이 (rate limit 방지)
+      if (i + batchSize < pendingCases.length) {
+        await new Promise(resolve => setTimeout(resolve, delayMs))
+      }
     }
 
     setIsGenerating(false)
@@ -640,6 +703,17 @@ export default function BatchQueue({ onResultsReady }: Props) {
       const completedCases = cases.filter(c => c.status === 'completed')
       onResultsReady(completedCases)
     }
+  }
+
+  // 실패 케이스 리트라이
+  const retryFailed = () => {
+    const failedCases = cases.filter(c => c.status === 'error')
+    if (failedCases.length === 0) return
+
+    // pending으로 전환 → 사용자가 "생성하기" 버튼으로 재실행
+    setCases(prev => prev.map(c =>
+      c.status === 'error' ? { ...c, status: 'pending' as const, error: undefined } : c
+    ))
   }
 
   // 결과 복사
@@ -871,7 +945,8 @@ export default function BatchQueue({ onResultsReady }: Props) {
                       <ul className="mt-2 space-y-1 text-gray-600">
                         <li>• AI 모델 선택 (Gemini Pro 권장)</li>
                         <li>• &quot;N개 글 한 번에 생성하기&quot; 클릭</li>
-                        <li>• 생성 완료까지 대기 (2개씩 동시 생성)</li>
+                        <li>• 도입부 자동 다양화 (10+개도 OK)</li>
+                        <li>• 실패 시 &quot;대기열로 복구&quot; 버튼 사용</li>
                       </ul>
                     </div>
                   </div>
@@ -1429,6 +1504,17 @@ export default function BatchQueue({ onResultsReady }: Props) {
               className="w-full py-4 px-6 bg-gradient-to-r from-primary-500 to-primary-600 text-white font-semibold rounded-2xl hover:from-primary-600 hover:to-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg"
             >
               ✨ {pendingCount}개 글 한 번에 생성하기
+            </button>
+          )}
+
+          {/* 실패 케이스 리트라이 버튼 */}
+          {cases.some(c => c.status === 'error') && !isGenerating && (
+            <button
+              type="button"
+              onClick={retryFailed}
+              className="w-full py-3 px-4 bg-red-500 text-white font-medium rounded-xl hover:bg-red-600 transition-colors"
+            >
+              🔄 실패한 {cases.filter(c => c.status === 'error').length}개 대기열로 복구
             </button>
           )}
         </div>

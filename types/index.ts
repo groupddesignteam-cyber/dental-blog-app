@@ -29,6 +29,20 @@ export interface UploadedImage {
   tag?: ImageTag // 이미지 유형 태그
 }
 
+// 배치 다양성 힌트 (패턴 인덱스 사전 배분 — 도입부 중복 방지)
+export interface BatchDiversityHints {
+  batchIndex: number            // 배치 내 순번 (0-based)
+  totalBatchSize: number        // 전체 배치 크기
+  greetingIndex: number         // INTRO_PATTERNS.greeting 인덱스
+  empathyHookIndex: number      // INTRO_PATTERNS.empathyHooks 인덱스
+  transitionIndex: number       // INTRO_PATTERNS.transition 인덱스
+  seasonHookIndex: number       // SEASON_DATA[month].hooks 인덱스
+  empathyPhraseIndex: number    // EMPATHY_PHRASES 인덱스
+  transitionPhraseIndex: number // TRANSITION_PHRASES 인덱스
+  introHookType?: string        // 정보성 모드: 체험공감/숫자통계/일상상황/오해반전/계절시기
+  closingCtaIndex: number       // CLOSING_CTA_PHRASES 인덱스
+}
+
 export interface GenerateFormData {
   clinicName: string
   region: string
@@ -46,6 +60,8 @@ export interface GenerateFormData {
   usePersona?: boolean
   // 글쓰기 모드 (전문가/정보성)
   writingMode?: WritingMode
+  // 배치 생성 시 도입부 다양성 힌트
+  diversityHints?: BatchDiversityHints
 }
 
 // 키워드 분석 결과 타입 (클라이언트용)
