@@ -241,8 +241,11 @@ export async function findSimilarPosts(
     return []
   }
 
+  // 다중 주제 지원: 쉼표로 분리
+  const queryTopics = queryTopic.split(',').map(t => t.trim()).filter(Boolean)
+  const queryCategories = queryTopics.map(t => getCategory(t)).filter(Boolean) as string[]
+
   const results: SimilarPost[] = []
-  const queryCategory = getCategory(queryTopic)
 
   for (const row of rows) {
     const clinic = (row[1] || '').trim() // B열: 치과명
@@ -255,17 +258,18 @@ export async function findSimilarPosts(
     // 점수 계산
     let score = 0
 
-    // 1. 카테고리 매칭
+    // 1. 카테고리 매칭 (다중 주제 중 하나라도 매칭)
     const rowCategory = getCategory(topic)
-    if (queryCategory && rowCategory === queryCategory) {
+    if (rowCategory && queryCategories.includes(rowCategory)) {
       score += 0.5
     }
 
-    // 2. 주제 유사도
-    score += similarityScore(queryTopic, topic) * 0.3
+    // 2. 주제 유사도 (다중 주제 중 가장 높은 유사도)
+    const maxSimilarity = Math.max(...queryTopics.map(t => similarityScore(t, topic)))
+    score += maxSimilarity * 0.3
 
-    // 3. 키워드 포함 여부
-    const queryWords = queryTopic.split(/\s+/)
+    // 3. 키워드 포함 여부 (모든 주제의 단어)
+    const queryWords = queryTopics.flatMap(t => t.split(/\s+/))
     for (const word of queryWords) {
       if (topic.includes(word) || content.slice(0, 500).includes(word)) {
         score += 0.1
@@ -517,7 +521,7 @@ function analyzeTone(content: string): string[] {
   return tones.length > 0 ? tones : ['일반적']
 }
 
-// 치과명 + 주제별 글 찾기 (자동 탭 탐색)
+// 치과명 + 주제별 글 찾기 (자동 탭 탐색, 다중 주제 지원)
 export async function findClinicTopicPosts(
   clinicName: string,
   topic: string,
@@ -531,10 +535,13 @@ export async function findClinicTopicPosts(
     return []
   }
 
-  console.log(`[findClinicTopicPosts] ${rows.length}개 행 로드, 치과: ${clinicName}, 주제: ${topic}`)
+  // 다중 주제 지원: 쉼표로 분리하여 각각 매칭
+  const topics = topic.split(',').map(t => t.trim()).filter(Boolean)
+  const queryCategories = topics.map(t => getCategory(t)).filter(Boolean) as string[]
+
+  console.log(`[findClinicTopicPosts] ${rows.length}개 행 로드, 치과: ${clinicName}, 주제: [${topics.join(', ')}]`)
 
   const results: SimilarPost[] = []
-  const queryCategory = getCategory(topic)
 
   for (const row of rows) {
     const rowClinic = (row[1] || '').trim() // B열: 치과명
@@ -553,20 +560,21 @@ export async function findClinicTopicPosts(
     // 점수 계산 (정확 매칭: 0.7, 부분 매칭: 0.3)
     let score = exactClinicMatch ? 0.7 : 0.3
 
-    // 1. 카테고리 매칭
+    // 1. 카테고리 매칭 (다중 주제 중 하나라도 매칭되면 가산)
     const rowCategory = getCategory(rowTopic)
-    if (queryCategory && rowCategory === queryCategory) {
+    if (rowCategory && queryCategories.includes(rowCategory)) {
       score += 0.3
     }
 
-    // 2. 주제 유사도
-    score += similarityScore(topic, rowTopic) * 0.2
+    // 2. 주제 유사도 (다중 주제 중 가장 높은 유사도 사용)
+    const maxSimilarity = Math.max(...topics.map(t => similarityScore(t, rowTopic)))
+    score += maxSimilarity * 0.2
 
     results.push({ clinic: rowClinic, topic: rowTopic, content, score })
   }
 
   const exactCount = results.filter(r => r.clinic === clinicName.trim()).length
-  console.log(`[findClinicTopicPosts] ${results.length}개 매칭 (정확: ${exactCount}, 부분: ${results.length - exactCount})`)
+  console.log(`[findClinicTopicPosts] ${results.length}개 매칭 (정확: ${exactCount}, 부분: ${results.length - exactCount}), 주제: [${topics.join(', ')}]`)
 
   // 점수 순 정렬
   results.sort((a, b) => b.score - a.score)

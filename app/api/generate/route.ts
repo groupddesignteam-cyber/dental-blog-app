@@ -1377,21 +1377,25 @@ export async function POST(request: NextRequest) {
     // ============================================================
     // 🚀 최적화: 동기 작업 먼저 처리 (0ms)
     // ============================================================
+    // 다중 주제 지원: 첫 번째 주제를 키워드/시즌 훅에 사용, 전체는 RAG/페르소나에 전달
+    const primaryTopic = data.topic.includes(',') ? data.topic.split(',')[0].trim() : data.topic
     const seasonHook = data.diversityHints
-      ? getSeasonHookByIndex(data.topic, data.diversityHints.seasonHookIndex)
-      : getSeasonHook(data.topic)
-    // 메인키워드: 사용자 직접 입력 우선 → 없으면 자동 생성
-    const mainKeyword = data.mainKeyword?.trim() || generateMainKeyword(data.region, data.topic)
-    const subKeywords = suggestSubKeywords(data.topic)
+      ? getSeasonHookByIndex(primaryTopic, data.diversityHints.seasonHookIndex)
+      : getSeasonHook(primaryTopic)
+    // 메인키워드: 사용자 직접 입력 우선 → 없으면 자동 생성 (첫 번째 주제 기준)
+    const mainKeyword = data.mainKeyword?.trim() || generateMainKeyword(data.region, primaryTopic)
+    const subKeywords = suggestSubKeywords(primaryTopic)
     const popularKeywords = getMonthlyPopularKeywords()
 
     // ============================================================
     // 🚀 최적화: 비동기 API 호출 병렬 처리 (기존 순차 3-4초 → 병렬 1-2초)
     // ============================================================
     const [ragResult, keywordResult, personaResult] = await Promise.allSettled([
+      // RAG: 전체 주제로 시트 검색 (다중 주제 필터링)
       generateRAGContext(data.topic, data.clinicName || undefined),
-      analyzeKeywordsComprehensive(data.topic),
-      // 치과별 페르소나 추출 (usePersona가 true이거나 기본적으로 항상 시도)
+      // 키워드 분석: 첫 번째 주제 기준
+      analyzeKeywordsComprehensive(primaryTopic),
+      // 치과별 페르소나 추출: 전체 주제로 시트 검색 (말투 일관성 유지)
       data.clinicName ? extractClinicPersona(data.clinicName, data.topic) : Promise.resolve(null),
     ])
 

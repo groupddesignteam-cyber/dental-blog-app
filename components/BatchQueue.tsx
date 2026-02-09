@@ -209,6 +209,126 @@ function SearchableSelect({
   )
 }
 
+// 다중 선택 가능한 검색 Combobox 컴포넌트
+function MultiSearchableSelect({
+  options,
+  values,
+  onChange,
+  placeholder,
+  allowCustom = false,
+}: {
+  options: string[]
+  values: string[]
+  onChange: (values: string[]) => void
+  placeholder: string
+  allowCustom?: boolean
+}) {
+  const [isOpen, setIsOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const wrapperRef = useRef<HTMLDivElement>(null)
+
+  const filteredOptions = options.filter((opt) =>
+    opt.toLowerCase().includes(search.toLowerCase()) && !values.includes(opt)
+  )
+
+  // 외부 클릭 감지
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
+        setIsOpen(false)
+        if (allowCustom && search && !options.includes(search) && !values.includes(search)) {
+          onChange([...values, search])
+          setSearch('')
+        }
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [allowCustom, search, options, values, onChange])
+
+  const addValue = (val: string) => {
+    if (!values.includes(val)) {
+      onChange([...values, val])
+    }
+    setSearch('')
+  }
+
+  const removeValue = (val: string) => {
+    onChange(values.filter(v => v !== val))
+  }
+
+  return (
+    <div ref={wrapperRef} className="relative">
+      {/* 선택된 태그들 + 검색 입력 */}
+      <div
+        className="w-full min-h-[42px] px-2 py-1.5 border border-gray-300 rounded-xl focus-within:ring-2 focus-within:ring-primary-500 flex flex-wrap items-center gap-1 cursor-text"
+        onClick={() => setIsOpen(true)}
+      >
+        {values.map((val) => (
+          <span
+            key={val}
+            className="inline-flex items-center gap-1 px-2 py-0.5 bg-primary-100 text-primary-700 text-sm rounded-lg"
+          >
+            {val}
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); removeValue(val) }}
+              className="text-primary-400 hover:text-primary-700 text-xs leading-none"
+            >
+              ✕
+            </button>
+          </span>
+        ))}
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => {
+            setSearch(e.target.value)
+            if (!isOpen) setIsOpen(true)
+          }}
+          onFocus={() => setIsOpen(true)}
+          placeholder={values.length === 0 ? placeholder : '추가 검색...'}
+          className="flex-1 min-w-[80px] px-1 py-0.5 outline-none text-sm bg-transparent"
+        />
+      </div>
+      {isOpen && (
+        <div className="absolute z-20 w-full mt-1 bg-white border border-gray-300 rounded-xl shadow-lg max-h-60 overflow-y-auto">
+          {filteredOptions.length > 0 ? (
+            filteredOptions.map((opt) => (
+              <button
+                key={opt}
+                type="button"
+                onClick={() => {
+                  addValue(opt)
+                  setIsOpen(values.length > 0) // 계속 열어둠 (다중 선택)
+                }}
+                className="w-full px-3 py-2 text-left hover:bg-primary-50"
+              >
+                {opt}
+              </button>
+            ))
+          ) : allowCustom && search && !values.includes(search) ? (
+            <button
+              type="button"
+              onClick={() => {
+                addValue(search)
+                setIsOpen(true)
+              }}
+              className="w-full px-3 py-2 text-left text-primary-600 hover:bg-primary-50"
+            >
+              &quot;{search}&quot; 추가하기
+            </button>
+          ) : (
+            <div className="px-3 py-2 text-gray-500">
+              {values.length > 0 && filteredOptions.length === 0 && !search ? '모든 주제가 선택됨' : '검색 결과 없음'}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 interface Props {
   onResultsReady?: (results: BlogCase[]) => void
 }
@@ -221,7 +341,7 @@ export default function BatchQueue({ onResultsReady }: Props) {
 
   // 현재 입력 폼
   const [selectedClinic, setSelectedClinic] = useState<ClinicPreset | null>(null)
-  const [selectedTopic, setSelectedTopic] = useState('')
+  const [selectedTopics, setSelectedTopics] = useState<string[]>([])
   const [memo, setMemo] = useState('')
   const [mainKeyword, setMainKeyword] = useState('')
 
@@ -257,7 +377,7 @@ export default function BatchQueue({ onResultsReady }: Props) {
   // 대기 중 케이스 인라인 편집 상태
   const [editingPendingId, setEditingPendingId] = useState<string | null>(null)
   const [pendingEditFields, setPendingEditFields] = useState({
-    topic: '',
+    topics: [] as string[],
     memo: '',
     mainKeyword: '',
     writingMode: 'expert' as WritingMode,
@@ -447,18 +567,20 @@ export default function BatchQueue({ onResultsReady }: Props) {
 
   // 케이스 추가
   const addCase = () => {
-    if (!selectedClinic || !selectedTopic) {
+    if (!selectedClinic || selectedTopics.length === 0) {
       alert('치과명과 주제를 선택해주세요.')
       return
     }
 
     const allImages = getAllImages()
+    // 다중 주제는 쉼표로 연결하여 저장
+    const topicStr = selectedTopics.join(', ')
     const newCase: BlogCase = {
       id: `case-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
       clinicName: selectedClinic.name,
       region: selectedClinic.region,
       doctorName: selectedClinic.doctorName,
-      topic: selectedTopic,
+      topic: topicStr,
       memo: memo.trim(),
       writingMode: postingMode,
       mainKeyword: mainKeyword.trim() || undefined,
@@ -536,7 +658,7 @@ export default function BatchQueue({ onResultsReady }: Props) {
   const startPendingEdit = (caseItem: BlogCase) => {
     setEditingPendingId(caseItem.id)
     setPendingEditFields({
-      topic: caseItem.topic,
+      topics: caseItem.topic.split(', ').filter(Boolean),
       memo: caseItem.memo,
       mainKeyword: caseItem.mainKeyword || '',
       writingMode: caseItem.writingMode,
@@ -549,7 +671,7 @@ export default function BatchQueue({ onResultsReady }: Props) {
       if (c.id === id) {
         return {
           ...c,
-          topic: pendingEditFields.topic,
+          topic: pendingEditFields.topics.join(', '),
           memo: pendingEditFields.memo,
           mainKeyword: pendingEditFields.mainKeyword.trim() || undefined,
           writingMode: pendingEditFields.writingMode,
@@ -1139,15 +1261,16 @@ export default function BatchQueue({ onResultsReady }: Props) {
             )}
           </div>
 
-          {/* 주제 선택 (검색 가능) */}
+          {/* 주제 선택 (다중 선택 가능) */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               주제 <span className="text-red-500">*</span>
+              <span className="ml-1 text-xs text-gray-400 font-normal">여러 주제 동시 선택 가능</span>
             </label>
-            <SearchableSelect
+            <MultiSearchableSelect
               options={allTreatments}
-              value={selectedTopic}
-              onChange={setSelectedTopic}
+              values={selectedTopics}
+              onChange={setSelectedTopics}
               placeholder="주제 검색..."
               allowCustom
             />
@@ -1179,8 +1302,8 @@ export default function BatchQueue({ onResultsReady }: Props) {
               type="text"
               value={mainKeyword}
               onChange={(e) => setMainKeyword(e.target.value)}
-              placeholder={selectedClinic?.region && selectedTopic
-                ? `예: ${selectedClinic.region} ${selectedClinic.name}  또는  ${selectedClinic.region} ${selectedTopic}`
+              placeholder={selectedClinic?.region && selectedTopics.length > 0
+                ? `예: ${selectedClinic.region} ${selectedClinic.name}  또는  ${selectedClinic.region} ${selectedTopics[0]}`
                 : '예: 부평 더굿모닝치과  또는  부평 임플란트'}
               className="flex-1 px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500"
             />
@@ -1193,10 +1316,10 @@ export default function BatchQueue({ onResultsReady }: Props) {
                 지역+치과명
               </button>
             )}
-            {selectedClinic?.region && selectedTopic && (
+            {selectedClinic?.region && selectedTopics.length > 0 && (
               <button
                 type="button"
-                onClick={() => setMainKeyword(`${selectedClinic.region} ${selectedTopic}`)}
+                onClick={() => setMainKeyword(`${selectedClinic.region} ${selectedTopics[0]}`)}
                 className="px-3 py-2 text-xs bg-green-50 text-green-600 rounded-xl hover:bg-green-100 whitespace-nowrap border border-green-200"
               >
                 지역+진료
@@ -1315,7 +1438,7 @@ export default function BatchQueue({ onResultsReady }: Props) {
         <button
           type="button"
           onClick={addCase}
-          disabled={!selectedClinic?.name || !selectedTopic || isGenerating}
+          disabled={!selectedClinic?.name || selectedTopics.length === 0 || isGenerating}
           className="w-full py-3 px-4 bg-primary-500 text-white font-medium rounded-xl hover:bg-primary-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
           + 큐에 추가 ({postingMode === 'expert' ? '🏥 임상' : '📚 정보성'})
@@ -1368,9 +1491,11 @@ export default function BatchQueue({ onResultsReady }: Props) {
                   <div className="flex items-center gap-3 flex-wrap">
                     <span className="text-sm font-medium text-gray-500">#{index + 1}</span>
                     <span className="font-medium text-gray-900">{caseItem.clinicName}</span>
-                    <span className="px-2 py-1 bg-primary-100 text-primary-700 text-sm rounded-lg">
-                      {caseItem.topic}
-                    </span>
+                    {caseItem.topic.split(', ').map((t, ti) => (
+                      <span key={ti} className="px-2 py-1 bg-primary-100 text-primary-700 text-sm rounded-lg">
+                        {t}
+                      </span>
+                    ))}
                     {/* 포스팅 모드 배지 (클릭으로 변경 가능) */}
                     <button
                       type="button"
@@ -1466,13 +1591,13 @@ export default function BatchQueue({ onResultsReady }: Props) {
                 {editingPendingId === caseItem.id && caseItem.status === 'pending' && (
                   <div className="border-t border-gray-200 p-4 bg-white space-y-3">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      {/* 주제 선택 */}
+                      {/* 주제 선택 (다중) */}
                       <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">주제</label>
-                        <SearchableSelect
+                        <label className="block text-xs font-medium text-gray-600 mb-1">주제 <span className="text-gray-400 font-normal">(여러 주제 선택 가능)</span></label>
+                        <MultiSearchableSelect
                           options={allTreatments}
-                          value={pendingEditFields.topic}
-                          onChange={(v) => setPendingEditFields(prev => ({ ...prev, topic: v }))}
+                          values={pendingEditFields.topics}
+                          onChange={(v) => setPendingEditFields(prev => ({ ...prev, topics: v }))}
                           placeholder="주제 검색..."
                           allowCustom
                         />
@@ -1488,7 +1613,7 @@ export default function BatchQueue({ onResultsReady }: Props) {
                             type="text"
                             value={pendingEditFields.mainKeyword}
                             onChange={(e) => setPendingEditFields(prev => ({ ...prev, mainKeyword: e.target.value }))}
-                            placeholder={`예: ${caseItem.region} ${pendingEditFields.topic}`}
+                            placeholder={`예: ${caseItem.region} ${pendingEditFields.topics[0] || ''}`}
                             className="flex-1 px-3 py-2 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
                           />
                           {caseItem.region && caseItem.clinicName && (
@@ -1500,10 +1625,10 @@ export default function BatchQueue({ onResultsReady }: Props) {
                               지역+치과명
                             </button>
                           )}
-                          {caseItem.region && pendingEditFields.topic && (
+                          {caseItem.region && pendingEditFields.topics.length > 0 && (
                             <button
                               type="button"
-                              onClick={() => setPendingEditFields(prev => ({ ...prev, mainKeyword: `${caseItem.region} ${pendingEditFields.topic}` }))}
+                              onClick={() => setPendingEditFields(prev => ({ ...prev, mainKeyword: `${caseItem.region} ${pendingEditFields.topics[0]}` }))}
                               className="px-2 py-1 text-xs bg-green-50 text-green-600 rounded-lg hover:bg-green-100 whitespace-nowrap border border-green-200"
                             >
                               지역+진료
@@ -1557,7 +1682,7 @@ export default function BatchQueue({ onResultsReady }: Props) {
                       <button
                         type="button"
                         onClick={() => savePendingEdit(caseItem.id)}
-                        disabled={!pendingEditFields.topic}
+                        disabled={pendingEditFields.topics.length === 0}
                         className="px-4 py-2 bg-primary-500 text-white text-sm rounded-lg hover:bg-primary-600 disabled:opacity-50"
                       >
                         저장
