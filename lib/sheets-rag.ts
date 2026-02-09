@@ -73,6 +73,22 @@ async function fetchBlogPostsData(): Promise<string[][] | null> {
   return null
 }
 
+// URL 제거 함수 (Google Docs, Drive 등 시트 본문에 포함된 링크 정화)
+function stripUrls(text: string): string {
+  if (!text) return text
+  return text
+    .replace(/https?:\/\/[^\s)>\]]+/gi, '')
+    .replace(/www\.[^\s)>\]]+/gi, '')
+    .replace(/docs\.google\.com[^\s)>\]]*/gi, '')
+    .replace(/drive\.google\.com[^\s)>\]]*/gi, '')
+    .replace(/bit\.ly[^\s)>\]]*/gi, '')
+    .replace(/goo\.gl[^\s)>\]]*/gi, '')
+    .replace(/\(출처:\s*\)/g, '')        // 빈 출처 태그 정리
+    .replace(/\[([^\]]*)\]\(\s*\)/g, '$1') // 빈 링크 마크다운 정리
+    .replace(/[ \t]{2,}/g, ' ')           // 연속 공백 정리
+    .trim()
+}
+
 // 주제별 키워드 매핑
 const TOPIC_KEYWORDS: Record<string, string[]> = {
   '임플란트': ['임플란트', '식립', '인공치아', '뼈이식', '골이식', '픽스쳐'],
@@ -231,7 +247,7 @@ export async function findSimilarPosts(
   for (const row of rows) {
     const clinic = (row[1] || '').trim() // B열: 치과명
     const topic = (row[2] || '').trim() // C열: 주제
-    const content = row[5] || '' // F열: 본문
+    const content = stripUrls(row[5] || '') // F열: 본문 (URL 제거)
 
     // 빈 내용 스킵
     if (!content || content.length < 100) continue
@@ -523,7 +539,7 @@ export async function findClinicTopicPosts(
   for (const row of rows) {
     const rowClinic = (row[1] || '').trim() // B열: 치과명
     const rowTopic = (row[2] || '').trim() // C열: 주제
-    const content = row[5] || '' // F열: 본문
+    const content = stripUrls(row[5] || '') // F열: 본문 (URL 제거)
 
     // 빈 내용 스킵
     if (!content || content.length < 100) continue
@@ -686,6 +702,79 @@ export async function extractUsedKeywords(clinicName: string): Promise<string[]>
   return [...keywords]
 }
 
+// 스타일 핑거프린트 추출 (치과별 고유 문체 특징)
+interface StyleFingerprint {
+  avgSentenceLength: number     // 평균 문장 길이 (자)
+  emojiDensity: string          // 이모지 사용 빈도 (높음/보통/낮음)
+  emojiSamples: string[]        // 사용된 이모지 예시
+  headerStyle: string           // 소제목 스타일 (이모지+텍스트 / 번호+텍스트 / 텍스트만)
+  paragraphRhythm: string       // 문단 리듬 (짧은문단 / 보통 / 긴문단)
+  usesQnA: boolean              // Q&A 형식 사용 여부
+  usesBullets: boolean          // 불릿 리스트 사용 여부
+  usesBold: boolean             // 볼드 강조 사용 여부
+  sentenceStarters: string[]    // 자주 쓰는 문장 시작 패턴
+}
+
+function extractStyleFingerprint(content: string): StyleFingerprint {
+  // 문장 분리 (마침표/물음표/느낌표 기준)
+  const sentences = content.split(/[.?!]\s/).filter(s => s.trim().length > 5)
+  const avgSentenceLength = sentences.length > 0
+    ? Math.floor(sentences.reduce((sum, s) => sum + s.length, 0) / sentences.length)
+    : 30
+
+  // 이모지 분석
+  const emojiRegex = /[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}✅❌⚠️📷🔹✓☐📋📊🏥📚⚡🎯💡🛒🏆]/gu
+  const emojis = content.match(emojiRegex) || []
+  const emojiCount = emojis.length
+  const contentLength = content.length
+  const emojiDensity = emojiCount > contentLength / 200 ? '높음'
+    : emojiCount > contentLength / 500 ? '보통' : '낮음'
+  const emojiSamples = [...new Set(emojis)].slice(0, 10)
+
+  // 소제목 스타일
+  const headers = content.match(/^##?\s+(.+)$/gm) || []
+  let headerStyle = '텍스트만'
+  if (headers.some(h => emojiRegex.test(h))) headerStyle = '이모지+텍스트'
+  else if (headers.some(h => /^\d+\./.test(h.replace(/^##?\s+/, '')))) headerStyle = '번호+텍스트'
+
+  // 문단 리듬
+  const paragraphs = content.split(/\n{2,}/).filter(p => p.trim().length > 20)
+  const avgParagraphLen = paragraphs.length > 0
+    ? Math.floor(paragraphs.reduce((sum, p) => sum + p.length, 0) / paragraphs.length)
+    : 100
+  const paragraphRhythm = avgParagraphLen < 80 ? '짧은문단' : avgParagraphLen < 200 ? '보통' : '긴문단'
+
+  // Q&A / 불릿 / 볼드 사용
+  const usesQnA = /Q\.\s|Q:|질문:|궁금/.test(content)
+  const usesBullets = /^[-•·]\s/m.test(content)
+  const usesBold = /\*\*[^*]+\*\*/.test(content)
+
+  // 문장 시작 패턴 (처음 3어절)
+  const starters = new Map<string, number>()
+  for (const sentence of sentences.slice(0, 30)) {
+    const trimmed = sentence.trim()
+    if (trimmed.length < 5) continue
+    const firstWords = trimmed.split(/\s+/).slice(0, 2).join(' ')
+    starters.set(firstWords, (starters.get(firstWords) || 0) + 1)
+  }
+  const sentenceStarters = [...starters.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([s]) => s)
+
+  return {
+    avgSentenceLength,
+    emojiDensity,
+    emojiSamples,
+    headerStyle,
+    paragraphRhythm,
+    usesQnA,
+    usesBullets,
+    usesBold,
+    sentenceStarters,
+  }
+}
+
 // ~요 어미를 ~다 체로 치환 (페르소나 샘플 정화용)
 function sanitizeEndings(text: string): string {
   return text
@@ -705,7 +794,7 @@ function sanitizeEndings(text: string): string {
     .replace(/싶어요/g, '싶습니다')
 }
 
-// 페르소나 기반 프롬프트 생성 (강화된 버전)
+// 페르소나 기반 프롬프트 생성 (강화된 버전 - 스타일 핑거프린트 포함)
 export function generatePersonaPrompt(persona: ClinicPersona): string {
   // 문단 길이 분석
   const paragraphs = persona.sampleContent.split('\n\n').filter(p => p.trim().length > 50)
@@ -717,8 +806,13 @@ export function generatePersonaPrompt(persona: ClinicPersona): string {
   const cleanedSampleContent = sanitizeEndings(persona.sampleContent)
   const cleanedSampleIntros = persona.sampleIntros.map(intro => sanitizeEndings(intro))
 
+  // ★ 스타일 핑거프린트 추출 (치과별 고유 문체)
+  const fingerprint = extractStyleFingerprint(persona.sampleContent)
+
   return `
-## 🎭 ${persona.clinicName} 글쓰기 스타일 참조
+## 🎭 ${persona.clinicName} 고유 글쓰기 스타일 (반드시 반영!)
+
+⚠️⚠️ **이 치과만의 고유한 글쓰기 스타일입니다. 아래 특징을 반드시 반영하세요!** ⚠️⚠️
 
 **분석된 기존 글**: ${persona.postCount}개
 **평균 글 길이**: ${persona.avgLength}자
@@ -729,24 +823,44 @@ export function generatePersonaPrompt(persona: ClinicPersona): string {
 ### 1. 어조 & 말투 특징
 ${persona.writingStyle.tone.map(t => `✓ ${t}`).join('\n')}
 
-### 2. 기존 글에서 발견된 어미 패턴 (참고만!)
+### 2. 📐 문체 핑거프린트 (이 치과의 고유 패턴 — 반드시 따라하세요!)
+
+| 항목 | ${persona.clinicName} 스타일 |
+|------|------|
+| 평균 문장 길이 | ${fingerprint.avgSentenceLength}자 내외 |
+| 이모지 사용 | ${fingerprint.emojiDensity} ${fingerprint.emojiSamples.length > 0 ? `(${fingerprint.emojiSamples.join('')})` : ''} |
+| 소제목 스타일 | ${fingerprint.headerStyle} |
+| 문단 리듬 | ${fingerprint.paragraphRhythm} (평균 ${avgParagraphLength}자) |
+| Q&A 형식 | ${fingerprint.usesQnA ? '사용함' : '사용 안 함'} |
+| 불릿 리스트 | ${fingerprint.usesBullets ? '사용함' : '사용 안 함'} |
+| 볼드 강조 | ${fingerprint.usesBold ? '사용함' : '사용 안 함'} |
+
+${fingerprint.sentenceStarters.length > 0 ? `**자주 쓰는 문장 시작 패턴**: ${fingerprint.sentenceStarters.map(s => `"${s}~"`).join(', ')}` : ''}
+
+⚡ **핵심**: 위 표의 스타일을 그대로 따라하세요!
+- 이모지 ${fingerprint.emojiDensity === '높음' ? '적극 사용' : fingerprint.emojiDensity === '보통' ? '적절히 사용' : '최소한 사용'}
+- 소제목은 "${fingerprint.headerStyle}" 스타일로
+- 문단은 "${fingerprint.paragraphRhythm}" 리듬 유지
+- 문장 길이 ${fingerprint.avgSentenceLength}자 내외 유지
+
+### 3. 기존 글에서 발견된 어미 패턴 (참고만!)
 - 문어체: ${persona.writingStyle.endings.formal.length > 0 ? persona.writingStyle.endings.formal.join(', ') : '없음'}
 - 구어체: ${persona.writingStyle.endings.colloquial.length > 0 ? persona.writingStyle.endings.colloquial.join(', ') : '없음'}
 
 ⚠️ **중요**: 어미 스타일은 위 패턴이 아닌, 아래 "글쓰기 모드"의 어미 규칙을 따르세요!
 기존 글에서 ~해요, ~거든요 등 구어체가 발견되더라도, 글쓰기 모드가 금지하면 사용하지 마세요.
 
-### 3. 인사말 패턴 (서문 참고)
+### 4. 인사말 패턴 (서문 참고)
 ${persona.writingStyle.greetings.length > 0
   ? persona.writingStyle.greetings.slice(0, 3).map((g, i) => `${i + 1}. "${g}"`).join('\n')
   : '1. "안녕하세요, [치과명] [원장님]입니다."'}
 
-### 4. 마무리 패턴 (결(結) 참고)
+### 5. 마무리 패턴 (결(結) 참고)
 ${persona.writingStyle.closings.length > 0
   ? persona.writingStyle.closings.slice(0, 3).map((c, i) => `${i + 1}. "${c}"`).join('\n')
   : '1. "[치과명] [원장님]이었습니다. 감사합니다."'}
 
-### 5. 서문 샘플 (⚠️ 구조/흐름을 반드시 참고! 어미만 글쓰기 모드 따를 것)
+### 6. 서문 샘플 (⚠️ 구조/흐름을 반드시 참고! 어미만 글쓰기 모드 따를 것)
 ⚠️ 아래 서문의 **구조, 문장 길이, 도입 방식, 공감 표현 순서**를 최대한 유사하게 작성하세요!
 ${cleanedSampleIntros.slice(0, 3).map((intro, i) => `
 **서문 샘플 ${i + 1}:**
@@ -760,18 +874,20 @@ ${intro}
 ## 📖 기존 글 참조 (구조/흐름 참고, 어미는 글쓰기 모드 우선!)
 
 아래는 ${persona.clinicName}의 기존 글입니다.
-**글의 구조, 문장 길이, 이모지 사용법, 설명 방식**을 참고하되,
+**글의 구조, 문장 길이, 이모지 사용법, 설명 방식, 문단 리듬**을 참고하되,
 **어미(~요/~다)**는 반드시 글쓰기 모드의 규칙을 따르세요!
-🚫 아래 샘플에 ~해요, ~거든요 등이 남아있더라도 절대 따라하지 마세요!
 
 ${cleanedSampleContent}
 
 ---
 
-## ⚠️ 스타일 적용 체크리스트
+## ⚠️ ${persona.clinicName} 스타일 적용 체크리스트
 
 ☐ 인사말 구조가 기존 글과 유사한가?
+☐ 이모지 사용 빈도가 기존 글과 비슷한가? (${fingerprint.emojiDensity})
+☐ 문장 길이가 기존 글과 비슷한가? (평균 ${fingerprint.avgSentenceLength}자)
 ☐ 문단 길이가 기존 글과 비슷한가? (평균 ${avgParagraphLength}자)
+☐ 소제목 스타일이 기존 글과 유사한가? (${fingerprint.headerStyle})
 ☐ 전체 글 길이가 기존 글과 비슷한가? (평균 ${persona.avgLength}자)
 ☐ 마무리 구조가 기존 글과 유사한가?
 ☐ **어미는 글쓰기 모드(임상/정보성) 규칙을 따랐는가?** ← 최우선!

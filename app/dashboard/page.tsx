@@ -116,7 +116,7 @@ export default function DashboardPage() {
       {/* 버전 표시 */}
       <div className="mb-4 text-center">
         <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-gray-100 text-gray-500 text-xs font-mono rounded-full">
-          v2.9.0 — 프롬프트 품질 강화 (문맥연결 + 키워드7회 + 글자수 준수)
+          v2.10.0 — RAG URL 정화 + 치과별 스타일 핑거프린트 강화
         </span>
       </div>
 

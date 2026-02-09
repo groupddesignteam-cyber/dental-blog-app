@@ -1507,8 +1507,10 @@ export async function POST(request: NextRequest) {
           }
 
           const rawContent = contentMatch ? contentMatch[1].trim() : fullContent
+          // ★ LLM 출력에서 URL 제거 (RAG 컨텍스트 누출 방지)
+          const cleanedContent = sanitizeInput(rawContent)
           // 44byte 줄바꿈 후처리 (네이버 블로그 최적화)
-          const content = formatLineBreaks(rawContent)
+          const content = formatLineBreaks(cleanedContent)
           // 해시태그 제외, 공백 제외 글자수 계산
           metadata.charCount = countContentChars(content)
 
