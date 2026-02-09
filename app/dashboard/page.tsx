@@ -116,7 +116,7 @@ export default function DashboardPage() {
       {/* 버전 표시 */}
       <div className="mb-4 text-center">
         <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-gray-100 text-gray-500 text-xs font-mono rounded-full">
-          v2.7.0 — 메인키워드 7회 배치 + RAG 강화 + AI 티 제거 + 이미지 힌트
+          v2.8.0 — 배치 다양성 + 임상모드 케이스구조 + 이미지 파싱 강화
         </span>
       </div>
 
