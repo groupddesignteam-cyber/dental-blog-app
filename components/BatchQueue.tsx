@@ -219,6 +219,10 @@ export default function BatchQueue({ onResultsReady }: Props) {
   const [sheetTreatments, setSheetTreatments] = useState<string[]>([])
   const [isLoadingPresets, setIsLoadingPresets] = useState(true)
 
+  // 치과별 주제 필터
+  const [clinicTopics, setClinicTopics] = useState<string[]>([])
+  const [isLoadingClinicTopics, setIsLoadingClinicTopics] = useState(false)
+
   // 현재 입력 폼
   const [selectedClinic, setSelectedClinic] = useState<ClinicPreset | null>(null)
   const [selectedTopic, setSelectedTopic] = useState('')
@@ -301,6 +305,37 @@ export default function BatchQueue({ onResultsReady }: Props) {
     }
     loadPresets()
   }, [])
+
+  // 치과명 선택 시 해당 치과의 주제 목록 가져오기
+  useEffect(() => {
+    if (!selectedClinic?.name) {
+      setClinicTopics([])
+      return
+    }
+
+    async function fetchClinicTopics() {
+      setIsLoadingClinicTopics(true)
+      try {
+        const res = await fetch(`/api/clinic-topics?clinicName=${encodeURIComponent(selectedClinic!.name)}`)
+        const data = await res.json()
+        if (data.topics?.length > 0) {
+          setClinicTopics(data.topics)
+          // 현재 선택된 주제가 새 목록에 없으면 초기화
+          if (selectedTopic && !data.topics.includes(selectedTopic)) {
+            setSelectedTopic('')
+          }
+        } else {
+          setClinicTopics([])
+        }
+      } catch (error) {
+        console.error('Failed to fetch clinic topics:', error)
+        setClinicTopics([])
+      } finally {
+        setIsLoadingClinicTopics(false)
+      }
+    }
+    fetchClinicTopics()
+  }, [selectedClinic?.name])
 
   // 이미지 파일 처리 (카테고리 지정)
   const processImageFile = useCallback((file: File, category: ImageTag) => {
@@ -422,8 +457,10 @@ export default function BatchQueue({ onResultsReady }: Props) {
   // 치과명 목록
   const clinicNames = clinicPresets.map(c => c.name)
 
-  // 치료 목록 (시트 + 기본)
-  const allTreatments = [...new Set([...sheetTreatments, ...TREATMENTS])].sort()
+  // 치료 목록: 치과별 주제 > 시트 전체 > 기본 목록
+  const allTreatments = clinicTopics.length > 0
+    ? clinicTopics
+    : [...new Set([...sheetTreatments, ...TREATMENTS])].sort()
 
   // 치과 선택 핸들러
   const handleClinicSelect = (name: string) => {
@@ -1101,12 +1138,20 @@ export default function BatchQueue({ onResultsReady }: Props) {
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               치료 <span className="text-red-500">*</span>
+              {clinicTopics.length > 0 && (
+                <span className="ml-1 text-xs text-primary-600 font-normal">
+                  ({selectedClinic?.name} 주제 {clinicTopics.length}개)
+                </span>
+              )}
+              {isLoadingClinicTopics && (
+                <span className="ml-1 text-xs text-gray-400 font-normal">불러오는 중...</span>
+              )}
             </label>
             <SearchableSelect
               options={allTreatments}
               value={selectedTopic}
               onChange={setSelectedTopic}
-              placeholder="치료 검색..."
+              placeholder={clinicTopics.length > 0 ? `${selectedClinic?.name} 주제 검색...` : "치료 검색..."}
               allowCustom
             />
           </div>
