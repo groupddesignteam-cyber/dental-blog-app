@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { LLMModel, GenerateResult, UploadedImage, ImageTag, WritingMode, BatchDiversityHints } from '@/types'
+import { validatePost, ValidationResult, ValidationCheck } from '@/lib/post-validator'
 
 // 케이스 타입
 interface BlogCase {
@@ -203,6 +204,96 @@ function SearchableSelect({
           ) : (
             <div className="px-3 py-2 text-gray-500">검색 결과 없음</div>
           )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// 검증 패널 컴포넌트
+function BatchValidationPanel({ caseItem }: { caseItem: BlogCase }) {
+  const [expanded, setExpanded] = useState(false)
+
+  const validation = useMemo(() => {
+    if (!caseItem.result?.content) return null
+    return validatePost(caseItem.result.content, {
+      clinicName: caseItem.clinicName,
+      topic: caseItem.topic,
+      writingMode: caseItem.writingMode,
+    })
+  }, [caseItem.result?.content, caseItem.clinicName, caseItem.topic, caseItem.writingMode])
+
+  if (!validation) return null
+
+  const scoreColor = validation.score >= 80
+    ? 'text-green-700 bg-green-100'
+    : validation.score >= 50
+    ? 'text-yellow-700 bg-yellow-100'
+    : 'text-red-700 bg-red-100'
+
+  return (
+    <div className="mt-8 pt-6 border-t border-gray-200">
+      <button
+        type="button"
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center justify-between"
+      >
+        <div className="flex items-center gap-3">
+          <span className="text-sm font-semibold text-gray-700">
+            {validation.passed ? '\u2705' : '\u26A0\uFE0F'} 규칙 검사
+          </span>
+          <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${scoreColor}`}>
+            {validation.score}점
+          </span>
+          <span className="text-xs text-gray-500">
+            {validation.checks.filter(c => c.passed).length}/{validation.checks.length} 통과
+          </span>
+        </div>
+        <span className="text-gray-400 text-sm">{expanded ? '\u25B2' : '\u25BC'}</span>
+      </button>
+
+      {expanded && (
+        <div className="mt-3 space-y-2">
+          {validation.checks.map((check, i) => (
+            <BatchCheckItem key={i} check={check} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function BatchCheckItem({ check }: { check: ValidationCheck }) {
+  const [showDetails, setShowDetails] = useState(false)
+  const icon = check.passed ? '\u2705' : check.severity === 'error' ? '\u274C' : '\u26A0\uFE0F'
+  const bgColor = check.passed
+    ? 'bg-green-50 border-green-200'
+    : check.severity === 'error'
+    ? 'bg-red-50 border-red-200'
+    : 'bg-yellow-50 border-yellow-200'
+
+  return (
+    <div className={`rounded-lg border p-2.5 ${bgColor}`}>
+      <div
+        className="flex items-center justify-between cursor-pointer"
+        onClick={() => check.details && setShowDetails(!showDetails)}
+      >
+        <div className="flex items-center gap-2">
+          <span className="text-sm">{icon}</span>
+          <span className="text-xs font-medium text-gray-800">{check.name}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-gray-600">{check.message}</span>
+          {check.details && (
+            <span className="text-gray-400 text-xs">{showDetails ? '\u25B2' : '\u25BC'}</span>
+          )}
+        </div>
+      </div>
+      {showDetails && check.details && (
+        <div className="mt-2 pl-6 space-y-0.5">
+          {check.details.map((d, j) => (
+            <p key={j} className="text-xs text-gray-500">{d}</p>
+          ))}
         </div>
       )}
     </div>
@@ -1579,6 +1670,9 @@ export default function BatchQueue({ onResultsReady }: Props) {
                             </div>
                           </div>
                         )}
+
+                        {/* 규칙 검증 패널 */}
+                        <BatchValidationPanel caseItem={caseItem} />
                       </div>
                     )}
                   </div>

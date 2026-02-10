@@ -1,9 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { GenerateResult } from '@/types'
 import { formatLineBreaks } from '@/lib/line-formatter'
+import { validatePost, ValidationResult, ValidationCheck } from '@/lib/post-validator'
 
 interface Props {
   result: GenerateResult | null
@@ -11,11 +12,101 @@ interface Props {
   streamContent: string
 }
 
+// 검증 결과 패널 컴포넌트
+function ValidationPanel({ validation }: { validation: ValidationResult }) {
+  const [expanded, setExpanded] = useState(false)
+
+  const scoreColor = validation.score >= 80
+    ? 'text-green-700 bg-green-100'
+    : validation.score >= 50
+    ? 'text-yellow-700 bg-yellow-100'
+    : 'text-red-700 bg-red-100'
+
+  return (
+    <div className="border-t border-gray-100 p-4">
+      {/* 요약 헤더 */}
+      <button
+        type="button"
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center justify-between"
+      >
+        <div className="flex items-center gap-3">
+          <span className="text-sm font-semibold text-gray-700">
+            {validation.passed ? '\u2705' : '\u26A0\uFE0F'} 규칙 검사
+          </span>
+          <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${scoreColor}`}>
+            {validation.score}점
+          </span>
+          <span className="text-xs text-gray-500">
+            {validation.checks.filter(c => c.passed).length}/{validation.checks.length} 통과
+          </span>
+        </div>
+        <span className="text-gray-400 text-sm">{expanded ? '\u25B2' : '\u25BC'}</span>
+      </button>
+
+      {/* 상세 결과 */}
+      {expanded && (
+        <div className="mt-3 space-y-2">
+          {validation.checks.map((check, i) => (
+            <CheckItem key={i} check={check} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function CheckItem({ check }: { check: ValidationCheck }) {
+  const [showDetails, setShowDetails] = useState(false)
+  const icon = check.passed ? '\u2705' : check.severity === 'error' ? '\u274C' : '\u26A0\uFE0F'
+  const bgColor = check.passed
+    ? 'bg-green-50 border-green-200'
+    : check.severity === 'error'
+    ? 'bg-red-50 border-red-200'
+    : 'bg-yellow-50 border-yellow-200'
+
+  return (
+    <div className={`rounded-lg border p-2.5 ${bgColor}`}>
+      <div
+        className="flex items-center justify-between cursor-pointer"
+        onClick={() => check.details && setShowDetails(!showDetails)}
+      >
+        <div className="flex items-center gap-2">
+          <span className="text-sm">{icon}</span>
+          <span className="text-xs font-medium text-gray-800">{check.name}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-gray-600">{check.message}</span>
+          {check.details && (
+            <span className="text-gray-400 text-xs">{showDetails ? '\u25B2' : '\u25BC'}</span>
+          )}
+        </div>
+      </div>
+      {showDetails && check.details && (
+        <div className="mt-2 pl-6 space-y-0.5">
+          {check.details.map((d, j) => (
+            <p key={j} className="text-xs text-gray-500">{d}</p>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function ResultPreview({ result, isStreaming, streamContent }: Props) {
   const [copied, setCopied] = useState(false)
   const [activeTab, setActiveTab] = useState<'preview' | 'markdown' | 'html' | 'naver'>('preview')
 
   const content = result?.content || streamContent
+
+  // 검증 실행 (result가 있을 때만)
+  const validation = useMemo(() => {
+    if (!result?.content) return null
+    return validatePost(result.content, {
+      topic: result.keywords?.main || '',
+      writingMode: 'expert', // 상세 모드에서는 기본 임상
+    })
+  }, [result])
 
   const handleCopy = async (text: string) => {
     await navigator.clipboard.writeText(text)
@@ -173,6 +264,9 @@ export default function ResultPreview({ result, isStreaming, streamContent }: Pr
           </div>
         </div>
       )}
+
+      {/* 검증 결과 패널 */}
+      {validation && <ValidationPanel validation={validation} />}
     </div>
   )
 }
