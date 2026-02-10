@@ -116,7 +116,7 @@ export default function DashboardPage() {
       {/* 버전 표시 */}
       <div className="mb-4 text-center">
         <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-gray-100 text-gray-500 text-xs font-mono rounded-full">
-          v2.12.0 — Q&A 본론 통합 + 용어 대치 강화 + 문장 자연스러움
+          v2.13.0 — 검수 패널 추가 (금칙어/키워드/의료법/문체 체크리스트)
         </span>
       </div>
 

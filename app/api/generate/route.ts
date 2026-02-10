@@ -13,7 +13,7 @@ import { INTRO_PATTERNS, BODY_PATTERNS, CLOSING_PATTERNS, TOPIC_PATTERNS, TRANSI
 import { generateMainKeyword, suggestSubKeywords } from '@/data/keywords'
 import { getSynonymInstruction } from '@/data/synonyms'
 import { formatLineBreaks } from '@/lib/line-formatter'
-import { runPostProcess } from '@/lib/post-processor'
+import { runPostProcess, runInspection } from '@/lib/post-processor'
 
 // RAG + 치과별 페르소나
 import { generateRAGContext, extractClinicPersona, generatePersonaPrompt, ClinicPersona } from '@/lib/sheets-rag'
@@ -1463,6 +1463,22 @@ export async function POST(request: NextRequest) {
           console.log(`[PostProcess] 섹션 글자수: 서론${postResult.sectionChars.intro}자 / 본론${postResult.sectionChars.body}자 / 결론${postResult.sectionChars.conclusion}자`)
           console.log(`[PostProcess] 스타일: 문어체${postResult.styleValidation.stats.formalEndingPct}% / 구어체${postResult.styleValidation.stats.casualEndingPct}% / 비유${postResult.styleValidation.stats.metaphorCount}개 / 임상소견${postResult.styleValidation.stats.clinicalPhraseCount}개`)
 
+          // ========================================
+          // 상세 검수 (Inspection) 실행 (v2.13)
+          // ========================================
+          const inspection = runInspection(content, postResult.sections, {
+            mainKeyword,
+            subKeywords,
+            clinicName: data.clinicName,
+            region: data.region,
+            doctorName: data.doctorName,
+            topic: data.topic,
+            treatment: data.treatment,
+            writingMode: data.writingMode,
+            charCount: metadata.charCount,
+          })
+          console.log(`[Inspection] 점수: ${inspection.score}/100 (통과 ${inspection.passCount}/${inspection.totalCount})`)
+
           // 최종 결과 전송
           controller.enqueue(
             encoder.encode(
@@ -1479,6 +1495,7 @@ export async function POST(request: NextRequest) {
                   charCount: metadata.charCount,
                   model: model,
                   warnings: warnings.length > 0 ? warnings : undefined,
+                  inspection,
                   postProcessStats: {
                     sectionChars: {
                       intro: postResult.sectionChars.intro,

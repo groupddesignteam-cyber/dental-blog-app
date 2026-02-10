@@ -1,8 +1,11 @@
 // 블로그 글 후처리 파이프라인
 // 미팅 피드백 기반 코드 레벨 검증 + 자동 수정 (2026.02.06)
+// v2.13 — 상세 검수(Inspection) 패널 추가 (2026.02.10)
 
-import { WritingMode } from '@/types'
+import { WritingMode, InspectionItem, InspectionResult } from '@/types'
 import { SYNONYM_DICTIONARY } from '@/data/synonyms'
+import { FORBIDDEN_PATTERNS } from '@/data/medical-law'
+import { TERM_REPLACEMENTS } from '@/data/knowledge'
 
 // ============================================================
 // 1. 섹션 파싱: 서론 / 본론 / 결론 분리
@@ -605,4 +608,307 @@ export function runPostProcess(
     imageAlt,
     allWarnings,
   }
+}
+
+// ============================================================
+// 9. 상세 검수 (Inspection) — 체크리스트 형태
+// ============================================================
+
+// 네이버 블로그 금칙어 (독립 단어 기준 검사)
+const BANNED_WORDS = [
+  '걱정', '고민', '고통', '경험', '너무', '힘들', '해결', '불안', '만족',
+  '공유', '무척', '바람', '완전', '해소', '해주', '해보', '해본',
+  '부담', '불편', '당연', '고생', '고합니다', '만가', '만족',
+  '과도', '과다', '과함', '심한', '독', '혼', '화',
+]
+
+// 환자 직접 언급 패턴
+const PATIENT_PATTERNS = [
+  /이번\s*환자/g,
+  /이\s*환자/g,
+  /해당\s*환자/g,
+  /환자분께서/g,
+  /치료받으신\s*분/g,
+  /내원하신\s*분/g,
+  /\d{2,3}대\s*(여성|남성|분)/g,
+  /\d{2,3}세\s*(여성|남성|분)/g,
+  /실제\s*(사례|치료\s*사례|케이스)/g,
+  /환자\s*후기/g,
+  /치료\s*후기/g,
+  /체험담/g,
+  /치료\s*전후\s*사진/g,
+]
+
+// 치료 효과 보장 패턴
+const GUARANTEE_PATTERNS = [
+  /해결해\s*드/g,
+  /완벽하게\s*치료/g,
+  /확실하게\s*개선/g,
+  /걱정\s*없이/g,
+  /안심하고/g,
+  /보장합니다/g,
+  /확실합니다/g,
+]
+
+// 미대치 용어 검사 (TERM_REPLACEMENTS에 있는 원어가 본문에 남아있는지)
+const CRITICAL_UNREPLACED_TERMS = ['크라운', 'Crown', 'crown', '이빨', '때운다', '심는다', '뼈이식']
+
+export function runInspection(
+  content: string,
+  sections: ParsedSections,
+  options: {
+    mainKeyword?: string
+    subKeywords?: string[]
+    clinicName: string
+    region: string
+    doctorName: string
+    topic: string
+    treatment: string
+    writingMode?: WritingMode
+    charCount: number
+  }
+): InspectionResult {
+  const items: InspectionItem[] = []
+
+  // ── 1. 금칙어 검사 ──
+  const bannedFound: string[] = []
+  for (const word of BANNED_WORDS) {
+    // 독립 단어 기준: 앞뒤가 공백/줄바꿈/문장부호이거나 문자열 시작/끝
+    const regex = new RegExp(`(?:^|[\\s,.!?])${escapeRegex(word)}(?=[\\s,.!?]|$)`, 'g')
+    const matches = content.match(regex)
+    if (matches && matches.length > 0) {
+      bannedFound.push(`${word}(${matches.length})`)
+    }
+  }
+  items.push({
+    id: 'banned-words',
+    label: '금칙어',
+    status: bannedFound.length === 0 ? 'pass' : 'fail',
+    detail: bannedFound.length === 0
+      ? '0개 사용'
+      : `${bannedFound.length}종 발견: ${bannedFound.slice(0, 5).join(', ')}${bannedFound.length > 5 ? ' ...' : ''}`,
+    count: bannedFound.length,
+    target: '0',
+  })
+
+  // ── 2. 메인키워드 배치 ──
+  if (options.mainKeyword) {
+    const mk = options.mainKeyword
+    const mkRegex = new RegExp(escapeRegex(mk), 'g')
+    const totalCount = (content.match(mkRegex) || []).length
+    const titleCount = (sections.title.match(mkRegex) || []).length
+    const introCount = (sections.intro.match(mkRegex) || []).length
+    const bodyCount = (sections.body.match(mkRegex) || []).length
+    const conclusionCount = (sections.conclusion.match(mkRegex) || []).length
+
+    const targetTotal = 7
+    const placementOk = titleCount >= 1 && introCount >= 1 && bodyCount >= 3 && conclusionCount >= 1
+
+    items.push({
+      id: 'main-keyword',
+      label: '메인키워드',
+      status: totalCount >= 5 && totalCount <= 10 && placementOk ? 'pass'
+        : totalCount >= 3 ? 'warning' : 'fail',
+      detail: `"${mk}" ${totalCount}/${targetTotal}회 (제목${titleCount} 서론${introCount} 본론${bodyCount} 결론${conclusionCount})`,
+      count: totalCount,
+      target: targetTotal,
+    })
+  }
+
+  // ── 3. 서브키워드 ──
+  if (options.subKeywords && options.subKeywords.length > 0) {
+    const subDetails: string[] = []
+    let subOk = true
+    for (const sub of options.subKeywords.slice(0, 5)) {
+      if (!sub) continue
+      const subRegex = new RegExp(escapeRegex(sub), 'g')
+      const count = (content.match(subRegex) || []).length
+      subDetails.push(`${sub}(${count})`)
+      if (count === 0) subOk = false
+    }
+    items.push({
+      id: 'sub-keywords',
+      label: '서브키워드',
+      status: subOk ? 'pass' : 'warning',
+      detail: subDetails.join(', '),
+    })
+  }
+
+  // ── 4. 치과명 본문 노출 ──
+  if (options.clinicName) {
+    const clinicRegex = new RegExp(escapeRegex(options.clinicName), 'g')
+    const bodyClinicCount = (sections.body.match(clinicRegex) || []).length
+    items.push({
+      id: 'clinic-in-body',
+      label: '치과명 본문노출',
+      status: bodyClinicCount === 0 ? 'pass' : 'fail',
+      detail: bodyClinicCount === 0
+        ? '본문 0회 (서론/결론만 사용)'
+        : `본문에 ${bodyClinicCount}회 노출 (의료법 위반 가능)`,
+      count: bodyClinicCount,
+      target: '0',
+    })
+  }
+
+  // ── 5. 환자 직접 언급 ──
+  let patientCount = 0
+  const patientMatches: string[] = []
+  for (const pattern of PATIENT_PATTERNS) {
+    const re = new RegExp(pattern.source, pattern.flags)
+    const matches = content.match(re)
+    if (matches) {
+      patientCount += matches.length
+      patientMatches.push(...matches.slice(0, 2))
+    }
+  }
+  items.push({
+    id: 'patient-mention',
+    label: '환자 직접 언급',
+    status: patientCount === 0 ? 'pass' : 'fail',
+    detail: patientCount === 0
+      ? '0건 (일반화 표현 사용)'
+      : `${patientCount}건 발견: ${patientMatches.slice(0, 3).join(', ')}`,
+    count: patientCount,
+    target: '0',
+  })
+
+  // ── 6. 크라운 단독 사용 ──
+  const crownRegex = /크라운(?!\s*\(|보철|수복)/g
+  const crownMatches = content.match(crownRegex) || []
+  // "지르코니아 보철" 앞에 붙은 게 아닌 독립적 "크라운" 카운트
+  items.push({
+    id: 'crown-standalone',
+    label: '크라운 단독사용',
+    status: crownMatches.length === 0 ? 'pass' : 'fail',
+    detail: crownMatches.length === 0
+      ? '0회 (지르코니아 보철로 대치됨)'
+      : `${crownMatches.length}회 단독 사용 (대치 필요)`,
+    count: crownMatches.length,
+    target: '0',
+  })
+
+  // ── 7. 의료법 위반 표현 ──
+  let medLawCount = 0
+  const medLawDetails: string[] = []
+  for (const { pattern, reason } of FORBIDDEN_PATTERNS) {
+    const re = new RegExp(pattern.source, pattern.flags)
+    const matches = content.match(re)
+    if (matches) {
+      medLawCount += matches.length
+      medLawDetails.push(`${matches[0]}(${reason})`)
+    }
+  }
+  // 치료 효과 보장
+  for (const pattern of GUARANTEE_PATTERNS) {
+    const re = new RegExp(pattern.source, pattern.flags)
+    const matches = content.match(re)
+    if (matches) {
+      medLawCount += matches.length
+      medLawDetails.push(...matches.map(m => `${m}(효과보장)`))
+    }
+  }
+  items.push({
+    id: 'medical-law',
+    label: '의료법 준수',
+    status: medLawCount === 0 ? 'pass' : 'fail',
+    detail: medLawCount === 0
+      ? '위반 0건'
+      : `${medLawCount}건: ${medLawDetails.slice(0, 3).join(', ')}`,
+    count: medLawCount,
+    target: '0',
+  })
+
+  // ── 8. 금지 어미 (~요) ──
+  const forbiddenEndings = ['해요', '거든요', '있어요', '드려요', '할게요', '볼게요', '줄게요']
+  let endingCount = 0
+  const endingDetails: string[] = []
+  for (const ending of forbiddenEndings) {
+    const regex = new RegExp(ending, 'g')
+    const matches = content.match(regex)
+    if (matches && matches.length > 0) {
+      endingCount += matches.length
+      endingDetails.push(`${ending}(${matches.length})`)
+    }
+  }
+  items.push({
+    id: 'forbidden-endings',
+    label: '금지어미(~요)',
+    status: endingCount === 0 ? 'pass' : 'fail',
+    detail: endingCount === 0
+      ? '0건'
+      : `${endingCount}건: ${endingDetails.join(', ')}`,
+    count: endingCount,
+    target: '0',
+  })
+
+  // ── 9. 글자수 범위 ──
+  const cc = options.charCount
+  items.push({
+    id: 'char-count',
+    label: '글자수',
+    status: cc >= 2500 && cc <= 3000 ? 'pass'
+      : cc >= 2000 && cc <= 3500 ? 'warning' : 'fail',
+    detail: `${cc.toLocaleString()}자 (권장: 2,500~3,000)`,
+    count: cc,
+    target: '2500~3000',
+  })
+
+  // ── 10. 부작용 고지문 ──
+  const hasDisclaimer = /※/.test(content)
+  items.push({
+    id: 'disclaimer',
+    label: '부작용 고지',
+    status: hasDisclaimer ? 'pass' : 'warning',
+    detail: hasDisclaimer ? '포함됨' : '미포함 (시술 글이면 필수)',
+  })
+
+  // ── 11. 용어 대치 누락 ──
+  const unreplaced: string[] = []
+  for (const term of CRITICAL_UNREPLACED_TERMS) {
+    const re = new RegExp(escapeRegex(term), 'g')
+    const matches = content.match(re)
+    if (matches && matches.length > 0) {
+      unreplaced.push(`${term}(${matches.length})`)
+    }
+  }
+  items.push({
+    id: 'term-replacement',
+    label: '용어 대치',
+    status: unreplaced.length === 0 ? 'pass' : 'fail',
+    detail: unreplaced.length === 0
+      ? '미대치 용어 0건'
+      : `미대치 ${unreplaced.length}종: ${unreplaced.join(', ')}`,
+    count: unreplaced.length,
+    target: '0',
+  })
+
+  // ── 12. 문체 검사 (모드별) ──
+  const formalPct = options.writingMode === 'expert' ? 90 : 55
+  // 문장 종결 어미 분석
+  const sentences = content.split(/[.!?]\s|\n/).filter(s => s.trim().length > 5)
+  const formalRe = /(?:입니다|됩니다|있습니다|바랍니다|하였습니다|습니다|겠습니다|드립니다)[\s.\n]*$/
+  let fCount = 0
+  for (const s of sentences) {
+    if (formalRe.test(s.trim())) fCount++
+  }
+  const actualFormalPct = sentences.length > 0 ? Math.round((fCount / sentences.length) * 100) : 0
+  const modeLabel = options.writingMode === 'expert' ? '임상' : '정보성'
+  items.push({
+    id: 'writing-style',
+    label: `문체(${modeLabel})`,
+    status: actualFormalPct >= formalPct ? 'pass'
+      : actualFormalPct >= formalPct - 15 ? 'warning' : 'fail',
+    detail: `문어체 ${actualFormalPct}% (${modeLabel} 기준: ${formalPct}%+)`,
+    count: actualFormalPct,
+    target: `${formalPct}%+`,
+  })
+
+  // 점수 계산
+  const passCount = items.filter(i => i.status === 'pass').length
+  const totalCount = items.length
+  const failCount = items.filter(i => i.status === 'fail').length
+  const warnCount = items.filter(i => i.status === 'warning').length
+  const score = Math.round(((passCount * 1.0 + warnCount * 0.5) / totalCount) * 100)
+
+  return { items, passCount, totalCount, score }
 }

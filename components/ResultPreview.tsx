@@ -2,13 +2,23 @@
 
 import { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { GenerateResult } from '@/types'
+import { GenerateResult, InspectionItem } from '@/types'
 import { formatLineBreaks } from '@/lib/line-formatter'
 
 interface Props {
   result: GenerateResult | null
   isStreaming: boolean
   streamContent: string
+}
+
+function InspectionBadge({ status }: { status: InspectionItem['status'] }) {
+  if (status === 'pass') {
+    return <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-green-500 text-white text-xs font-bold">&#10003;</span>
+  }
+  if (status === 'fail') {
+    return <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-red-500 text-white text-xs font-bold">&#10007;</span>
+  }
+  return <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-yellow-400 text-white text-xs font-bold">!</span>
 }
 
 export default function ResultPreview({ result, isStreaming, streamContent }: Props) {
@@ -25,7 +35,6 @@ export default function ResultPreview({ result, isStreaming, streamContent }: Pr
 
   // 마크다운을 HTML로 변환 (네이버 블로그용)
   const convertToHtml = (markdown: string) => {
-    // 간단한 변환 (실제로는 더 정교한 변환 필요)
     return markdown
       .replace(/^### (.*$)/gm, '<h3>$1</h3>')
       .replace(/^## (.*$)/gm, '<h2>$1</h2>')
@@ -38,11 +47,10 @@ export default function ResultPreview({ result, isStreaming, streamContent }: Pr
 
   // 네이버 블로그용 44byte 줄바꿈 포맷
   const convertToNaver = (markdown: string) => {
-    // 마크다운 문법 제거 + 44byte 줄바꿈
     const plain = markdown
-      .replace(/^#{1,3}\s*/gm, '')       // 헤더 마크업 제거
-      .replace(/\*\*(.*?)\*\*/g, '$1')   // 볼드 제거
-      .replace(/\*(.*?)\*/g, '$1')       // 이탤릭 제거
+      .replace(/^#{1,3}\s*/gm, '')
+      .replace(/\*\*(.*?)\*\*/g, '$1')
+      .replace(/\*(.*?)\*/g, '$1')
     return formatLineBreaks(plain)
   }
 
@@ -126,11 +134,63 @@ export default function ResultPreview({ result, isStreaming, streamContent }: Pr
       {/* 푸터 */}
       {result && (
         <div className="border-t border-gray-100 p-4">
+          {/* ====== 검수 결과 패널 (v2.13) ====== */}
+          {result.inspection && (
+            <div className="mb-4 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+              {/* 검수 헤더: 점수 + 통과율 */}
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-bold text-gray-900">검수 결과</span>
+                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                    result.inspection.score >= 80 ? 'bg-green-100 text-green-800'
+                    : result.inspection.score >= 50 ? 'bg-yellow-100 text-yellow-800'
+                    : 'bg-red-100 text-red-800'
+                  }`}>
+                    {result.inspection.score}점
+                  </span>
+                </div>
+                <span className="text-xs text-gray-500">
+                  {result.inspection.passCount}/{result.inspection.totalCount} 통과
+                </span>
+              </div>
+
+              {/* 검수 항목 리스트 */}
+              <div className="space-y-1.5">
+                {result.inspection.items.map((item) => (
+                  <div
+                    key={item.id}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs ${
+                      item.status === 'pass' ? 'bg-green-50'
+                      : item.status === 'fail' ? 'bg-red-50'
+                      : 'bg-yellow-50'
+                    }`}
+                  >
+                    <InspectionBadge status={item.status} />
+                    <span className={`font-medium min-w-[90px] ${
+                      item.status === 'pass' ? 'text-green-800'
+                      : item.status === 'fail' ? 'text-red-800'
+                      : 'text-yellow-800'
+                    }`}>
+                      {item.label}
+                    </span>
+                    <span className={`flex-1 ${
+                      item.status === 'pass' ? 'text-green-700'
+                      : item.status === 'fail' ? 'text-red-700'
+                      : 'text-yellow-700'
+                    }`}>
+                      {item.detail}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* 경고 패널 */}
           {result.warnings && result.warnings.length > 0 && (
             <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
               <div className="text-sm font-medium text-amber-800 mb-2">
-                검증 결과 ({result.warnings.length}건)
+                경고 ({result.warnings.length}건)
               </div>
               <ul className="space-y-1">
                 {result.warnings.map((w, i) => (

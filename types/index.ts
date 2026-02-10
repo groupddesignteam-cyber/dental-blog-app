@@ -100,6 +100,24 @@ export interface Post {
   createdAt: string
 }
 
+// 검수 항목 개별 결과
+export interface InspectionItem {
+  id: string
+  label: string
+  status: 'pass' | 'fail' | 'warning'
+  detail: string
+  count?: number
+  target?: number | string // 목표값 (숫자 또는 "0" 등)
+}
+
+// 검수 결과 전체
+export interface InspectionResult {
+  items: InspectionItem[]
+  passCount: number
+  totalCount: number
+  score: number // 0~100
+}
+
 export interface GenerateResult {
   title: string
   content: string
@@ -111,6 +129,7 @@ export interface GenerateResult {
   charCount: number
   imageFileNames?: string[]
   warnings?: string[] // 의료법 위반, 글자수 경고 등
+  inspection?: InspectionResult // 상세 검수 결과
   postProcessStats?: {
     sectionChars?: {
       intro: number
