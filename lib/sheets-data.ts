@@ -13,6 +13,56 @@ export interface SheetData {
 }
 
 // Google Sheets에서 치과명, 치료 목록 가져오기
+// 특정 치과의 주제/치료 목록 가져오기 (RAG Rawdata 시트에서)
+export async function getClinicTopics(clinicName: string): Promise<string[]> {
+  const sheetId = process.env.GOOGLE_SHEETS_ID
+  const apiKey = process.env.GOOGLE_API_KEY
+
+  if (!sheetId || !apiKey) {
+    console.log('[getClinicTopics] Google Sheets 설정이 없습니다.')
+    return []
+  }
+
+  try {
+    // Rawdata 시트에서 B(치과명), C(주제) 열 가져오기
+    const range = 'Rawdata!B2:C'
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(range)}?key=${apiKey}`
+
+    const response = await fetch(url, {
+      headers: { 'Accept': 'application/json' },
+      next: { revalidate: 60 },
+    })
+
+    if (!response.ok) {
+      throw new Error(`Sheets API error: ${response.status}`)
+    }
+
+    const data = await response.json()
+    const rows = data.values || []
+
+    const topicsSet = new Set<string>()
+    const clinicNameTrimmed = clinicName.trim()
+
+    for (const row of rows) {
+      const rowClinic = (row[0] || '').trim() // B열: 치과명
+      const rowTopic = (row[1] || '').trim()  // C열: 주제
+
+      if (!rowTopic) continue
+
+      // 치과명 매칭 (부분 일치 허용)
+      if (rowClinic.includes(clinicNameTrimmed) || clinicNameTrimmed.includes(rowClinic)) {
+        topicsSet.add(rowTopic)
+      }
+    }
+
+    return Array.from(topicsSet).sort()
+  } catch (error) {
+    console.error('[getClinicTopics] Failed:', error)
+    return []
+  }
+}
+
+// Google Sheets에서 치과명, 치료 목록 가져오기
 export async function getSheetData(): Promise<SheetData> {
   const sheetId = process.env.GOOGLE_SHEETS_ID
   const apiKey = process.env.GOOGLE_API_KEY

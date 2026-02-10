@@ -167,8 +167,13 @@ function KeywordButton({
 export default function GenerateForm({ onSubmit, isLoading }: Props) {
   // 시트 데이터
   const [sheetClinics, setSheetClinics] = useState<string[]>([])
+  const [sheetClinicDetails, setSheetClinicDetails] = useState<Array<{name: string; region: string; doctorName: string}>>([])
   const [sheetTreatments, setSheetTreatments] = useState<string[]>([])
   const [isLoadingSheet, setIsLoadingSheet] = useState(true)
+
+  // 치과별 주제 필터
+  const [clinicTopics, setClinicTopics] = useState<string[]>([])
+  const [isLoadingClinicTopics, setIsLoadingClinicTopics] = useState(false)
 
   // 직접 입력 모드
   const [customClinicMode, setCustomClinicMode] = useState(false)
@@ -217,6 +222,9 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
         if (data.clinics?.length > 0) {
           setSheetClinics(data.clinics)
         }
+        if (data.clinicDetails?.length > 0) {
+          setSheetClinicDetails(data.clinicDetails)
+        }
         if (data.treatments?.length > 0) {
           setSheetTreatments(data.treatments)
         }
@@ -228,6 +236,37 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
     }
     fetchSheetData()
   }, [])
+
+  // 치과명 선택 시 해당 치과의 주제 목록 가져오기
+  useEffect(() => {
+    if (!formData.clinicName) {
+      setClinicTopics([])
+      return
+    }
+
+    async function fetchClinicTopics() {
+      setIsLoadingClinicTopics(true)
+      try {
+        const res = await fetch(`/api/clinic-topics?clinicName=${encodeURIComponent(formData.clinicName)}`)
+        const data = await res.json()
+        if (data.topics?.length > 0) {
+          setClinicTopics(data.topics)
+          // 현재 선택된 주제가 새 목록에 없으면 초기화
+          if (formData.topic && !data.topics.includes(formData.topic)) {
+            setFormData(prev => ({ ...prev, topic: '' }))
+          }
+        } else {
+          setClinicTopics([])
+        }
+      } catch (error) {
+        console.error('Failed to fetch clinic topics:', error)
+        setClinicTopics([])
+      } finally {
+        setIsLoadingClinicTopics(false)
+      }
+    }
+    fetchClinicTopics()
+  }, [formData.clinicName])
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
@@ -393,8 +432,10 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
     })
   }
 
-  // 사용할 치료 목록
-  const treatmentOptions = sheetTreatments.length > 0 ? sheetTreatments : DEFAULT_TREATMENTS
+  // 사용할 치료 목록: 치과별 주제 > 시트 전체 주제 > 기본 목록
+  const treatmentOptions = clinicTopics.length > 0
+    ? clinicTopics
+    : (sheetTreatments.length > 0 ? sheetTreatments : DEFAULT_TREATMENTS)
 
   // 필수 필드 체크
   const isBasicInfoComplete = formData.clinicName && formData.region && formData.doctorName &&
@@ -480,7 +521,16 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
                 <SearchableSelect
                   options={sheetClinics}
                   value={formData.clinicName}
-                  onChange={(value) => setFormData((prev) => ({ ...prev, clinicName: value }))}
+                  onChange={(value) => {
+                    // 치과 선택 시 지역, 원장님 자동 채우기
+                    const detail = sheetClinicDetails.find(d => d.name === value)
+                    setFormData((prev) => ({
+                      ...prev,
+                      clinicName: value,
+                      ...(detail?.region ? { region: detail.region } : {}),
+                      ...(detail?.doctorName ? { doctorName: detail.doctorName } : {}),
+                    }))
+                  }}
                   placeholder="치과명 검색 또는 선택..."
                   required
                   onCustomInput={() => setCustomClinicMode(true)}
@@ -555,7 +605,41 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               주제/치료 <span className="text-red-500">*</span>
+              {clinicTopics.length > 0 && (
+                <span className="ml-2 text-xs text-primary-600 font-normal">
+                  ({formData.clinicName}의 기존 글 주제 {clinicTopics.length}개)
+                </span>
+              )}
+              {isLoadingClinicTopics && (
+                <span className="ml-2 text-xs text-gray-400 font-normal">불러오는 중...</span>
+              )}
             </label>
+
+            {/* 치과별 주제 버튼 (RAG에서 가져온 주제들) */}
+            {clinicTopics.length > 0 && !customTopicMode && (
+              <div className="mb-3 p-3 bg-primary-50 rounded-xl border border-primary-100">
+                <p className="text-xs text-primary-700 mb-2 font-medium">
+                  {formData.clinicName}의 기존 글 주제 (클릭하여 선택)
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {clinicTopics.map((topic) => (
+                    <button
+                      key={topic}
+                      type="button"
+                      onClick={() => setFormData((prev) => ({ ...prev, topic }))}
+                      className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all border ${
+                        formData.topic === topic
+                          ? 'bg-primary-500 text-white border-primary-500'
+                          : 'bg-white text-gray-700 border-gray-300 hover:border-primary-400 hover:text-primary-600'
+                      }`}
+                    >
+                      {topic}
+                      {formData.topic === topic && ' \u2713'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {!customTopicMode ? (
               <>
@@ -563,7 +647,7 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
                   options={treatmentOptions}
                   value={formData.topic}
                   onChange={(value) => setFormData((prev) => ({ ...prev, topic: value }))}
-                  placeholder="주제/치료 검색 또는 선택..."
+                  placeholder={clinicTopics.length > 0 ? "위 버튼으로 선택하거나 검색..." : "주제/치료 검색 또는 선택..."}
                   required
                   onCustomInput={() => setCustomTopicMode(true)}
                 />
