@@ -116,7 +116,7 @@ export default function DashboardPage() {
       {/* 버전 표시 */}
       <div className="mb-4 text-center">
         <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-gray-100 text-gray-500 text-xs font-mono rounded-full">
-          v2.11.0 — 후처리 파이프라인 추가 (섹션 글자수·키워드·동의어·스타일 검증)
+          v2.12.0 — Q&A 본론 통합 + 용어 대치 강화 + 문장 자연스러움
         </span>
       </div>
 
