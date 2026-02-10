@@ -126,6 +126,68 @@ export default function ResultPreview({ result, isStreaming, streamContent }: Pr
       {/* 푸터 */}
       {result && (
         <div className="border-t border-gray-100 p-4">
+          {/* 경고 패널 */}
+          {result.warnings && result.warnings.length > 0 && (
+            <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+              <div className="text-sm font-medium text-amber-800 mb-2">
+                검증 결과 ({result.warnings.length}건)
+              </div>
+              <ul className="space-y-1">
+                {result.warnings.map((w, i) => (
+                  <li key={i} className="text-xs text-amber-700">{w}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* 후처리 통계 */}
+          {result.postProcessStats && (
+            <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="text-sm font-medium text-blue-800 mb-2">후처리 분석</div>
+              <div className="grid grid-cols-2 gap-2 text-xs text-blue-700">
+                {result.postProcessStats.sectionChars && (
+                  <div>
+                    <span className="font-medium">섹션 글자수:</span>{' '}
+                    서론 {result.postProcessStats.sectionChars.intro}자 /
+                    본론 {result.postProcessStats.sectionChars.body}자 /
+                    결론 {result.postProcessStats.sectionChars.conclusion}자
+                  </div>
+                )}
+                {result.postProcessStats.keywordFreq && (
+                  <div>
+                    <span className="font-medium">메인키워드:</span>{' '}
+                    총 {result.postProcessStats.keywordFreq.mainCount}회
+                    (제목{result.postProcessStats.keywordFreq.placement.title}/
+                    서론{result.postProcessStats.keywordFreq.placement.intro}/
+                    본론{result.postProcessStats.keywordFreq.placement.body}/
+                    결론{result.postProcessStats.keywordFreq.placement.conclusion})
+                  </div>
+                )}
+                {result.postProcessStats.style && (
+                  <div>
+                    <span className="font-medium">문체:</span>{' '}
+                    문어체 {result.postProcessStats.style.formalEndingPct}% /
+                    구어체 {result.postProcessStats.style.casualEndingPct}% /
+                    비유 {result.postProcessStats.style.metaphorCount}개 /
+                    임상소견 {result.postProcessStats.style.clinicalPhraseCount}개
+                  </div>
+                )}
+                {result.postProcessStats.synonymReplacements != null && result.postProcessStats.synonymReplacements > 0 && (
+                  <div>
+                    <span className="font-medium">동의어 치환:</span>{' '}
+                    {result.postProcessStats.synonymReplacements}건 자동 적용
+                  </div>
+                )}
+                {result.postProcessStats.imageAlt && result.postProcessStats.imageAlt.total > 0 && (
+                  <div>
+                    <span className="font-medium">이미지:</span>{' '}
+                    {result.postProcessStats.imageAlt.withAlt}/{result.postProcessStats.imageAlt.total}개 alt 텍스트
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* 키워드 정보 */}
           <div className="mb-4 space-y-2">
             <div className="flex items-center gap-2">

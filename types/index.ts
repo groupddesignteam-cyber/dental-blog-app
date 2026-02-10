@@ -111,4 +111,31 @@ export interface GenerateResult {
   charCount: number
   imageFileNames?: string[]
   warnings?: string[] // 의료법 위반, 글자수 경고 등
+  postProcessStats?: {
+    sectionChars?: {
+      intro: number
+      body: number
+      conclusion: number
+    }
+    keywordFreq?: {
+      mainCount: number
+      placement: {
+        title: number
+        intro: number
+        body: number
+        conclusion: number
+      }
+    }
+    style?: {
+      formalEndingPct: number
+      casualEndingPct: number
+      metaphorCount: number
+      clinicalPhraseCount: number
+    }
+    synonymReplacements?: number
+    imageAlt?: {
+      total: number
+      withAlt: number
+    }
+  }
 }

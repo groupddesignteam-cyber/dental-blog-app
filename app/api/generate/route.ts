@@ -13,6 +13,7 @@ import { INTRO_PATTERNS, BODY_PATTERNS, CLOSING_PATTERNS, TOPIC_PATTERNS, TRANSI
 import { generateMainKeyword, suggestSubKeywords } from '@/data/keywords'
 import { getSynonymInstruction } from '@/data/synonyms'
 import { formatLineBreaks } from '@/lib/line-formatter'
+import { runPostProcess } from '@/lib/post-processor'
 
 // RAG + 치과별 페르소나
 import { generateRAGContext, extractClinicPersona, generatePersonaPrompt, ClinicPersona } from '@/lib/sheets-rag'
@@ -1344,11 +1345,28 @@ export async function POST(request: NextRequest) {
 
           const rawContent = contentMatch ? contentMatch[1].trim() : fullContent
           // 44byte 줄바꿈 후처리 (네이버 블로그 최적화)
-          const content = formatLineBreaks(rawContent)
+          const formattedContent = formatLineBreaks(rawContent)
+
+          // ========================================
+          // 코드 레벨 후처리 파이프라인 (v2.11)
+          // ========================================
+          const postResult = runPostProcess(formattedContent, {
+            mainKeyword: mainKeyword,
+            subKeywords: subKeywords,
+            clinicName: data.clinicName,
+            region: data.region,
+            topic: data.topic,
+            treatment: data.treatment,
+            writingMode: data.writingMode,
+          })
+
+          // 동의어 치환이 적용된 최종 콘텐츠
+          const content = postResult.content
+
           // 해시태그 제외, 공백 제외 글자수 계산
           metadata.charCount = countContentChars(content)
 
-          // 의료법 금지어 검증
+          // 의료법 금지어 검증 (기존 유지)
           const forbiddenViolations = checkForbiddenPatterns(content)
           const warnings: string[] = []
 
@@ -1357,7 +1375,7 @@ export async function POST(request: NextRequest) {
             warnings.push(`⚠️ 의료법 위반 가능 표현: ${forbiddenViolations.map(v => `"${v.match}" (${v.reason})`).join(', ')}`)
           }
 
-          // ~요 어미 검증 (금지 어미 사후 검사)
+          // ~요 어미 검증 (기존 유지)
           const forbiddenEndings = ['해요', '거든요', '있어요', '드려요', '할게요', '볼게요', '줄게요']
           const foundEndings: string[] = []
           for (const ending of forbiddenEndings) {
@@ -1372,12 +1390,32 @@ export async function POST(request: NextRequest) {
             warnings.push(`🚫 금지 어미(~요) 발견: ${foundEndings.join(', ')} — 수정이 필요합니다`)
           }
 
-          // 글자수 경고 (네이버 SEO 기준: 2,500~3,000자 권장)
+          // 글자수 경고 (네이버 SEO 기준)
           if (metadata.charCount < 2000) {
             warnings.push(`⚠️ 글자수 부족: ${metadata.charCount}자 (네이버 SEO 권장: 2,500~3,000자)`)
           } else if (metadata.charCount > 3500) {
             warnings.push(`⚠️ 글자수 초과: ${metadata.charCount}자 (권장: 2,500~3,000자)`)
           }
+
+          // 후처리 파이프라인 경고 통합
+          warnings.push(...postResult.allWarnings)
+
+          // 후처리 결과 로깅
+          if (postResult.allWarnings.length > 0) {
+            console.log(`[PostProcess] 검증 결과: ${postResult.allWarnings.length}건 경고`)
+            for (const w of postResult.allWarnings) {
+              console.log(`  - ${w}`)
+            }
+          }
+          if (postResult.synonymResult.replacements.length > 0) {
+            console.log(`[PostProcess] 동의어 치환: ${postResult.synonymResult.replacements.length}건`)
+          }
+          if (postResult.keywordFreq) {
+            const kf = postResult.keywordFreq
+            console.log(`[PostProcess] 키워드 "${kf.mainKeyword}": 총 ${kf.mainCount}회 (제목${kf.placement.title}/서론${kf.placement.intro}/본론${kf.placement.body}/결론${kf.placement.conclusion})`)
+          }
+          console.log(`[PostProcess] 섹션 글자수: 서론${postResult.sectionChars.intro}자 / 본론${postResult.sectionChars.body}자 / 결론${postResult.sectionChars.conclusion}자`)
+          console.log(`[PostProcess] 스타일: 문어체${postResult.styleValidation.stats.formalEndingPct}% / 구어체${postResult.styleValidation.stats.casualEndingPct}% / 비유${postResult.styleValidation.stats.metaphorCount}개 / 임상소견${postResult.styleValidation.stats.clinicalPhraseCount}개`)
 
           // 최종 결과 전송
           controller.enqueue(
@@ -1395,6 +1433,23 @@ export async function POST(request: NextRequest) {
                   charCount: metadata.charCount,
                   model: model,
                   warnings: warnings.length > 0 ? warnings : undefined,
+                  postProcessStats: {
+                    sectionChars: {
+                      intro: postResult.sectionChars.intro,
+                      body: postResult.sectionChars.body,
+                      conclusion: postResult.sectionChars.conclusion,
+                    },
+                    keywordFreq: postResult.keywordFreq ? {
+                      mainCount: postResult.keywordFreq.mainCount,
+                      placement: postResult.keywordFreq.placement,
+                    } : undefined,
+                    style: postResult.styleValidation.stats,
+                    synonymReplacements: postResult.synonymResult.replacements.length,
+                    imageAlt: {
+                      total: postResult.imageAlt.total,
+                      withAlt: postResult.imageAlt.withAlt,
+                    },
+                  },
                 },
               })}\n\n`
             )
