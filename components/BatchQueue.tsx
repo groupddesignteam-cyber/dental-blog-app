@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { LLMModel, GenerateResult, UploadedImage, ImageTag, WritingMode, BatchDiversityHints } from '@/types'
+import { LLMModel, GenerateResult, UploadedImage, WritingMode, BatchDiversityHints } from '@/types'
 import { validatePost, ValidationResult, ValidationCheck } from '@/lib/post-validator'
 
 // 케이스 타입
@@ -71,50 +71,10 @@ const POSTING_MODES = [
   },
 ] as const
 
-// 이미지 태그 옵션
-const IMAGE_TAGS: { id: ImageTag; label: string; color: string }[] = [
-  { id: 'before', label: '치료 전', color: 'bg-blue-100 text-blue-700' },
-  { id: 'after', label: '치료 후', color: 'bg-green-100 text-green-700' },
-  { id: 'xray', label: 'X-ray', color: 'bg-gray-100 text-gray-700' },
-  { id: 'ct', label: 'CT', color: 'bg-purple-100 text-purple-700' },
-  { id: 'progress', label: '치료 과정', color: 'bg-yellow-100 text-yellow-700' },
-  { id: 'other', label: '기타', color: 'bg-gray-100 text-gray-600' },
-]
-
 // 파일명에서 순번 추출 (01_xxx.jpg → 1, 없으면 999)
 function extractOrderFromFilename(filename: string): number {
   const match = filename.match(/^(\d{1,3})[_\-\s]/)
   return match ? parseInt(match[1], 10) : 999
-}
-
-// 파일명에서 태그 자동 감지
-function detectTagFromFilename(filename: string): ImageTag {
-  const lower = filename.toLowerCase()
-  // 초진 → before
-  if (lower.includes('초진')) {
-    return 'before'
-  }
-  if (lower.includes('before') || lower.includes('치료전') || lower.includes('_전.') || lower.includes('_전_')) {
-    return 'before'
-  }
-  if (lower.includes('after') || lower.includes('치료후') || lower.includes('_후.') || lower.includes('_후_')) {
-    return 'after'
-  }
-  // X-ray는 시점(치료전/중/후)과 독립적으로 존재하므로, 시점 우선 체크 후 촬영유형 체크
-  if (lower.includes('xray') || lower.includes('x-ray') || lower.includes('엑스레이') || lower.includes('파노라마')) {
-    // 치료중 + xray → progress로 분류 (치료 과정 중 촬영)
-    if (lower.includes('치료중')) return 'progress'
-    return 'xray'
-  }
-  if (lower.includes('ct') || lower.includes('씨티')) {
-    if (lower.includes('치료중')) return 'progress'
-    return 'ct'
-  }
-  // 치료중 → progress
-  if (lower.includes('치료중') || lower.includes('과정') || lower.includes('진행') || lower.includes('progress')) {
-    return 'progress'
-  }
-  return 'other'
 }
 
 // 검색 가능한 Combobox 컴포넌트
@@ -320,15 +280,8 @@ export default function BatchQueue({ onResultsReady }: Props) {
   const [memo, setMemo] = useState('')
   const [mainKeyword, setMainKeyword] = useState('')
 
-  // 카테고리별 이미지 상태
-  const [imagesByCategory, setImagesByCategory] = useState<Record<ImageTag, UploadedImage[]>>({
-    before: [],
-    after: [],
-    xray: [],
-    ct: [],
-    progress: [],
-    other: [],
-  })
+  // 임상 이미지 (단일 배열)
+  const [images, setImages] = useState<UploadedImage[]>([])
 
   // 모델 선택 (기본: Claude Sonnet)
   const [model, setModel] = useState<LLMModel>('claude')
@@ -349,18 +302,11 @@ export default function BatchQueue({ onResultsReady }: Props) {
   const [editContent, setEditContent] = useState('')
   const [editTitle, setEditTitle] = useState('')
 
-  // 파일 입력 refs (카테고리별)
-  const fileInputRefs = useRef<Record<ImageTag, HTMLInputElement | null>>({
-    before: null,
-    after: null,
-    xray: null,
-    ct: null,
-    progress: null,
-    other: null,
-  })
+  // 파일 입력 ref
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // 드래그 앤 드랍 상태 (카테고리별)
-  const [draggingCategory, setDraggingCategory] = useState<ImageTag | null>(null)
+  // 드래그 앤 드랍 상태
+  const [isDragging, setIsDragging] = useState(false)
 
   // 도움말 모달 상태
   const [showGuide, setShowGuide] = useState(false)
@@ -428,17 +374,15 @@ export default function BatchQueue({ onResultsReady }: Props) {
     fetchClinicTopics()
   }, [selectedClinic?.name])
 
-  // 이미지 파일 처리 (카테고리 지정)
-  const processImageFile = useCallback((file: File, category: ImageTag) => {
+  // 이미지 파일 처리
+  const processImageFile = useCallback((file: File) => {
     return new Promise<UploadedImage>((resolve, reject) => {
       const reader = new FileReader()
       reader.onload = (event) => {
-        const url = event.target?.result as string
         resolve({
           name: file.name,
-          url,
+          url: event.target?.result as string,
           file,
-          tag: category,
         })
       }
       reader.onerror = reject
@@ -446,11 +390,8 @@ export default function BatchQueue({ onResultsReady }: Props) {
     })
   }, [])
 
-  // 카테고리별 이미지 업로드 처리
-  const handleCategoryImageUpload = useCallback(async (
-    e: React.ChangeEvent<HTMLInputElement>,
-    category: ImageTag
-  ) => {
+  // 이미지 업로드 처리
+  const handleImageUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
     if (!files || files.length === 0) return
 
@@ -464,46 +405,38 @@ export default function BatchQueue({ onResultsReady }: Props) {
     }
 
     try {
-      const newImages = await Promise.all(imageFiles.map(f => processImageFile(f, category)))
-      setImagesByCategory(prev => ({
-        ...prev,
-        [category]: [...prev[category], ...newImages],
-      }))
+      const newImages = await Promise.all(imageFiles.map(f => processImageFile(f)))
+      setImages(prev => [...prev, ...newImages])
     } catch (error) {
       console.error('이미지 업로드 오류:', error)
       alert('이미지 업로드에 실패했습니다.')
     }
 
-    // ref 초기화
-    const ref = fileInputRefs.current[category]
-    if (ref) ref.value = ''
+    if (fileInputRef.current) fileInputRef.current.value = ''
   }, [processImageFile])
 
-  // 카테고리별 이미지 삭제
-  const removeCategoryImage = useCallback((category: ImageTag, index: number) => {
-    setImagesByCategory(prev => ({
-      ...prev,
-      [category]: prev[category].filter((_, i) => i !== index),
-    }))
+  // 이미지 삭제
+  const removeImage = useCallback((index: number) => {
+    setImages(prev => prev.filter((_, i) => i !== index))
   }, [])
 
-  // 드래그 앤 드랍 핸들러 (카테고리별)
-  const handleDragOver = useCallback((e: React.DragEvent, category: ImageTag) => {
+  // 드래그 앤 드랍 핸들러
+  const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    setDraggingCategory(category)
+    setIsDragging(true)
   }, [])
 
   const handleDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    setDraggingCategory(null)
+    setIsDragging(false)
   }, [])
 
-  const handleDrop = useCallback(async (e: React.DragEvent, category: ImageTag) => {
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    setDraggingCategory(null)
+    setIsDragging(false)
 
     const files = e.dataTransfer.files
     if (!files || files.length === 0) return
@@ -518,32 +451,20 @@ export default function BatchQueue({ onResultsReady }: Props) {
     }
 
     try {
-      const newImages = await Promise.all(imageFiles.map(f => processImageFile(f, category)))
-      setImagesByCategory(prev => ({
-        ...prev,
-        [category]: [...prev[category], ...newImages],
-      }))
+      const newImages = await Promise.all(imageFiles.map(f => processImageFile(f)))
+      setImages(prev => [...prev, ...newImages])
     } catch (error) {
       console.error('이미지 업로드 오류:', error)
       alert('이미지 업로드에 실패했습니다.')
     }
   }, [processImageFile])
 
-  // 모든 카테고리 이미지를 하나의 배열로 합치기 (순번 정렬 우선)
-  const getAllImages = useCallback((): UploadedImage[] => {
-    const allImages = Object.values(imagesByCategory).flat()
-    // 파일명에 순번이 있는 이미지가 하나라도 있으면 순번 기준 정렬
-    const hasOrder = allImages.some(img => extractOrderFromFilename(img.name) !== 999)
-    if (hasOrder) {
-      return [...allImages].sort((a, b) => extractOrderFromFilename(a.name) - extractOrderFromFilename(b.name))
-    }
-    // 순번 없으면 기존 카테고리 순서 유지
-    const order: ImageTag[] = ['before', 'xray', 'ct', 'progress', 'after', 'other']
-    return order.flatMap(cat => imagesByCategory[cat])
-  }, [imagesByCategory])
-
-  // 총 이미지 수
-  const totalImageCount = Object.values(imagesByCategory).reduce((sum, arr) => sum + arr.length, 0)
+  // 파일명 순번 기준 정렬
+  const getSortedImages = useCallback((): UploadedImage[] => {
+    return [...images].sort((a, b) =>
+      extractOrderFromFilename(a.name) - extractOrderFromFilename(b.name)
+    )
+  }, [images])
 
   // 치과명 목록
   const clinicNames = clinicPresets.map(c => c.name)
@@ -571,7 +492,7 @@ export default function BatchQueue({ onResultsReady }: Props) {
       return
     }
 
-    const allImages = getAllImages()
+    const sortedImages = getSortedImages()
     const newCase: BlogCase = {
       id: `case-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
       clinicName: selectedClinic.name,
@@ -581,22 +502,14 @@ export default function BatchQueue({ onResultsReady }: Props) {
       memo: memo.trim(),
       writingMode: postingMode,
       mainKeyword: mainKeyword.trim() || undefined,
-      images: allImages.length > 0 ? allImages : undefined,
+      images: sortedImages.length > 0 ? sortedImages : undefined,
       status: 'pending',
     }
 
     setCases(prev => [...prev, newCase])
     setMemo('')
     setMainKeyword('')
-    // 모든 카테고리 이미지 초기화
-    setImagesByCategory({
-      before: [],
-      after: [],
-      xray: [],
-      ct: [],
-      progress: [],
-      other: [],
-    })
+    setImages([])
   }
 
   // 케이스 삭제
@@ -649,26 +562,6 @@ export default function BatchQueue({ onResultsReady }: Props) {
     setEditingCaseId(null)
     setEditTitle('')
     setEditContent('')
-  }
-
-  // 이미지 이름에 태그 정보 포함시키기
-  const buildImageNameWithTag = (img: UploadedImage, index: number): string => {
-    const tagLabels: Record<ImageTag, string> = {
-      before: '치료전',
-      after: '치료후',
-      xray: 'xray',
-      ct: 'ct',
-      progress: '과정',
-      other: '',
-    }
-    const tagLabel = img.tag ? tagLabels[img.tag] : ''
-    // 태그가 있으면 파일명에 태그 정보 추가
-    if (tagLabel && !img.name.toLowerCase().includes(tagLabel.toLowerCase())) {
-      const ext = img.name.split('.').pop() || 'jpg'
-      const baseName = img.name.replace(/\.[^/.]+$/, '')
-      return `${baseName}_${tagLabel}_${String(index + 1).padStart(2, '0')}.${ext}`
-    }
-    return img.name
   }
 
   // 배치 다양성 힌트 사전 배분 (Shuffle-and-Cycle 알고리즘)
@@ -731,13 +624,14 @@ export default function BatchQueue({ onResultsReady }: Props) {
         doctorName: caseItem.doctorName,
         topic: caseItem.topic,
         patientInfo: caseItem.memo || '일반 환자',
-        treatment: `${caseItem.topic} 치료`,
+        treatment: caseItem.memo
+          ? `${caseItem.topic} - ${caseItem.memo.substring(0, 100)}`
+          : `${caseItem.topic} 치료`,
         model,
         writingMode: caseItem.writingMode,
         mainKeyword: caseItem.mainKeyword || undefined,
-        images: caseItem.images?.map((img, i) => ({
-          name: buildImageNameWithTag(img, i),
-          tag: img.tag,
+        images: caseItem.images?.map((img) => ({
+          name: img.name,
         })),
         diversityHints: diversityHints || undefined,
       }
@@ -951,55 +845,29 @@ export default function BatchQueue({ onResultsReady }: Props) {
               {/* 이미지 업로드 가이드 */}
               <section>
                 <h3 className="text-lg font-bold text-gray-800 mb-3 flex items-center gap-2">
-                  📷 이미지 업로드
+                  📷 임상 이미지 업로드
                 </h3>
                 <div className="bg-gray-50 rounded-xl p-4 space-y-3 text-sm">
                   <p className="text-gray-600">
-                    카테고리별로 이미지를 업로드하면 AI가 자동으로 적절한 위치에 배치합니다.
+                    임상 이미지를 한 곳에 업로드하면 AI가 파일명을 분석하여 자동으로 글에 배치합니다.
                   </p>
-
-                  {/* 카테고리 설명 */}
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="flex items-center gap-2">
-                      <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-lg">치료 전</span>
-                      <span className="text-xs text-gray-500">시술 전 상태 사진</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-lg">치료 후</span>
-                      <span className="text-xs text-gray-500">시술 후 결과 사진</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="px-2 py-0.5 bg-gray-100 text-gray-700 text-xs rounded-lg">X-ray</span>
-                      <span className="text-xs text-gray-500">파노라마, 엑스레이</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="px-2 py-0.5 bg-purple-100 text-purple-700 text-xs rounded-lg">CT</span>
-                      <span className="text-xs text-gray-500">CT 촬영 영상</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="px-2 py-0.5 bg-yellow-100 text-yellow-700 text-xs rounded-lg">치료 과정</span>
-                      <span className="text-xs text-gray-500">시술 중 단계별 사진</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded-lg">기타</span>
-                      <span className="text-xs text-gray-500">그 외 사진</span>
-                    </div>
-                  </div>
 
                   <div className="bg-green-50 rounded-lg p-3 border border-green-200">
                     <p className="font-medium text-green-700">✨ 사용 방법</p>
                     <ul className="mt-2 space-y-1 text-xs text-green-600">
-                      <li>• 해당 카테고리 영역에 이미지를 <strong>드래그 앤 드랍</strong></li>
-                      <li>• 또는 영역을 <strong>클릭</strong>하여 파일 선택</li>
-                      <li>• 파일명 규칙 없이 IMG_0001.jpg도 OK!</li>
+                      <li>• 업로드 영역에 이미지를 <strong>드래그 앤 드랍</strong> 또는 <strong>클릭</strong></li>
+                      <li>• 여러 장 한 번에 선택 가능</li>
                     </ul>
                   </div>
 
                   <div className="bg-primary-50 rounded-lg p-3">
-                    <p className="font-medium text-primary-700">📋 글에 삽입되는 순서</p>
-                    <p className="text-primary-600 mt-1 text-xs">
-                      치료 전 → X-ray → CT → 치료 과정 → 치료 후 → 기타
-                    </p>
+                    <p className="font-medium text-primary-700">📋 파일명 규칙 (권장)</p>
+                    <ul className="mt-2 space-y-1 text-xs text-primary-600">
+                      <li>• <strong>01_초진_파노라마.jpg</strong> → 순서 1, 초진 파노라마</li>
+                      <li>• <strong>02_치료중_상악동거상술.jpg</strong> → 순서 2, 치료중</li>
+                      <li>• <strong>03_치료후_임플란트세팅.jpg</strong> → 순서 3, 치료후</li>
+                      <li>• 숫자가 없어도 업로드 순서대로 배치됩니다</li>
+                    </ul>
                   </div>
                 </div>
               </section>
@@ -1274,17 +1142,17 @@ export default function BatchQueue({ onResultsReady }: Props) {
               value={mainKeyword}
               onChange={(e) => setMainKeyword(e.target.value)}
               placeholder={selectedClinic?.region && selectedTopic
-                ? `예: ${selectedClinic.region} ${selectedClinic.name}  또는  ${selectedClinic.region} ${selectedTopic}`
-                : '예: 부평 더굿모닝치과  또는  부평 임플란트'}
+                ? `예: ${selectedClinic.region} 치과  또는  ${selectedClinic.region} ${selectedTopic}`
+                : '예: 부평 치과  또는  부평 임플란트'}
               className="flex-1 px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500"
             />
-            {selectedClinic?.region && selectedClinic?.name && (
+            {selectedClinic?.region && (
               <button
                 type="button"
-                onClick={() => setMainKeyword(`${selectedClinic.region} ${selectedClinic.name}`)}
+                onClick={() => setMainKeyword(`${selectedClinic.region} 치과`)}
                 className="px-3 py-2 text-xs bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100 whitespace-nowrap border border-blue-200"
               >
-                지역+치과명
+                지역+치과
               </button>
             )}
             {selectedClinic?.region && selectedTopic && (
@@ -1299,86 +1167,73 @@ export default function BatchQueue({ onResultsReady }: Props) {
           </div>
         </div>
 
-        {/* 카테고리별 이미지 업로드 */}
+        {/* 임상 이미지 업로드 (단일 영역) */}
         <div className="mb-4">
           <label className="block text-sm font-medium text-gray-700 mb-3">
-            📷 이미지 (선택) {totalImageCount > 0 && <span className="text-primary-600">· {totalImageCount}개</span>}
+            📷 임상 이미지 (선택) {images.length > 0 && <span className="text-primary-600">· {images.length}개</span>}
           </label>
 
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-            {IMAGE_TAGS.map((tagInfo) => {
-              const categoryImages = imagesByCategory[tagInfo.id]
-              const isDraggingHere = draggingCategory === tagInfo.id
-
-              return (
-                <div key={tagInfo.id} className="space-y-2">
-                  {/* 카테고리 헤더 */}
-                  <div className={`text-xs font-medium px-2 py-1 rounded-lg inline-block ${tagInfo.color}`}>
-                    {tagInfo.label}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*,.gif"
+            multiple
+            onChange={handleImageUpload}
+            className="hidden"
+            id="upload-images"
+          />
+          <label
+            htmlFor="upload-images"
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            className={`block w-full min-h-[100px] p-4 border-2 border-dashed rounded-xl transition-all cursor-pointer ${
+              isDragging
+                ? 'border-primary-500 bg-primary-50'
+                : 'border-gray-200 hover:border-primary-400 hover:bg-gray-50'
+            }`}
+          >
+            {images.length > 0 ? (
+              <div className="flex flex-wrap gap-3">
+                {getSortedImages().map((img, idx) => (
+                  <div key={`${img.name}-${idx}`} className="relative group text-center">
+                    <img
+                      src={img.url}
+                      alt={img.name}
+                      className="w-16 h-16 object-cover rounded-lg border border-gray-200"
+                    />
+                    <p className="text-[10px] text-gray-500 mt-1 max-w-[64px] truncate" title={img.name}>
+                      {img.name}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        removeImage(images.indexOf(img))
+                      }}
+                      className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      ✕
+                    </button>
                   </div>
-
-                  {/* 업로드 영역 */}
-                  <input
-                    ref={(el) => { fileInputRefs.current[tagInfo.id] = el }}
-                    type="file"
-                    accept="image/*,.gif"
-                    multiple
-                    onChange={(e) => handleCategoryImageUpload(e, tagInfo.id)}
-                    className="hidden"
-                    id={`upload-${tagInfo.id}`}
-                  />
-                  <label
-                    htmlFor={`upload-${tagInfo.id}`}
-                    onDragOver={(e) => handleDragOver(e, tagInfo.id)}
-                    onDragLeave={handleDragLeave}
-                    onDrop={(e) => handleDrop(e, tagInfo.id)}
-                    className={`block w-full min-h-[80px] p-2 border-2 border-dashed rounded-xl transition-all cursor-pointer ${
-                      isDraggingHere
-                        ? 'border-primary-500 bg-primary-50'
-                        : 'border-gray-200 hover:border-primary-400 hover:bg-gray-50'
-                    }`}
-                  >
-                    {categoryImages.length > 0 ? (
-                      <div className="flex flex-wrap gap-1">
-                        {categoryImages.map((img, idx) => (
-                          <div key={`${img.name}-${idx}`} className="relative group">
-                            <img
-                              src={img.url}
-                              alt={img.name}
-                              className="w-12 h-12 object-cover rounded-lg border border-gray-200"
-                            />
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.preventDefault()
-                                e.stopPropagation()
-                                removeCategoryImage(tagInfo.id, idx)
-                              }}
-                              className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                            >
-                              ✕
-                            </button>
-                          </div>
-                        ))}
-                        <div className="w-12 h-12 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center text-gray-400 text-lg">
-                          +
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="h-full flex flex-col items-center justify-center text-gray-400 py-2">
-                        <span className="text-2xl mb-1">+</span>
-                        <span className="text-xs">드래그 또는 클릭</span>
-                      </div>
-                    )}
-                  </label>
+                ))}
+                <div className="w-16 h-16 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center text-gray-400 text-lg">
+                  +
                 </div>
-              )
-            })}
-          </div>
+              </div>
+            ) : (
+              <div className="text-center text-gray-400 py-4">
+                <span className="text-3xl mb-2 block">📷</span>
+                <span className="text-sm">임상 이미지를 드래그하거나 클릭하여 업로드</span>
+                <span className="block text-xs mt-1 text-gray-300">파일명 규칙: 01_초진_파노라마.jpg, 02_치료중_골이식.jpg</span>
+              </div>
+            )}
+          </label>
 
-          {totalImageCount > 0 && (
+          {images.length > 0 && (
             <p className="text-xs text-gray-500 mt-2">
-              이미지 순서: 치료 전 → X-ray → CT → 치료 과정 → 치료 후 → 기타
+              파일명의 숫자 순서(01, 02...)대로 글에 배치됩니다.
             </p>
           )}
         </div>
