@@ -14,52 +14,50 @@ export interface ValidationResult {
   score: number // 0-100
 }
 
-// ── 글자수 계산 (이미지/논문/부작용 고지 제외) ──
+// ── 글자수 계산 (이미지/논문/부작용 고지/해시태그 제외, 공백 제외) ──
 function countContentChars(content: string): number {
   let text = content
-  // 이미지 플레이스홀더 제거
-  text = text.replace(/📷\s*\[이미지[^\]]*\]/g, '')
+  // 이미지 플레이스홀더 제거 (📷 [이미지...] + alt 텍스트 전체)
+  text = text.replace(/📷\s*\[[^\]]*\]\s*(\([^)]*\))?/g, '')
   text = text.replace(/\[IMAGE_\d+\]/g, '')
+  // 해시태그 제거 (#키워드)
+  text = text.replace(/#[^\s#]+/g, '')
   // 논문 인용 블록 제거
   text = text.replace(/📎\s*References[\s\S]*$/m, '')
   text = text.replace(/\[References\][\s\S]*$/m, '')
   // 부작용 고지문 제거
-  text = text.replace(/※[\s\S]*?부작용[\s\S]*?$/m, '')
+  text = text.replace(/※[\s\S]*?(?:부작용|개인에 따라)[\s\S]*?$/m, '')
   // 출처 제거
   text = text.replace(/\(출처:.*?\)/g, '')
   // 마크다운 문법 제거
-  text = text.replace(/^#{1,3}\s*/gm, '')
+  text = text.replace(/^#{1,6}\s*/gm, '')
   text = text.replace(/\*\*(.*?)\*\*/g, '$1')
   text = text.replace(/\*(.*?)\*/g, '$1')
   text = text.replace(/---+/g, '')
-  return text.trim().length
+  // 공백·줄바꿈 제거 후 순수 글자수만 카운트
+  text = text.replace(/\s+/g, '')
+  return text.length
 }
 
 // ── 1. 글자수 검사 ──
 function checkCharCount(content: string): ValidationCheck {
   const count = countContentChars(content)
-  const passed = count >= 2500 && count <= 3000
+  const passed = count >= 1700
   let message: string
   let severity: 'error' | 'warning' | 'info'
 
-  if (count < 2000) {
-    message = `글자수 심각 부족: ${count.toLocaleString()}자 (최소 2,500자)`
+  if (count < 1400) {
+    message = `글자수 심각 부족: ${count.toLocaleString()}자 (최소 1,700자, 공백 제외)`
     severity = 'error'
-  } else if (count < 2500) {
-    message = `글자수 부족: ${count.toLocaleString()}자 (최소 2,500자)`
-    severity = 'warning'
-  } else if (count > 3500) {
-    message = `글자수 심각 초과: ${count.toLocaleString()}자 (최대 3,000자)`
-    severity = 'error'
-  } else if (count > 3000) {
-    message = `글자수 초과: ${count.toLocaleString()}자 (최대 3,000자)`
+  } else if (count < 1700) {
+    message = `글자수 부족: ${count.toLocaleString()}자 (최소 1,700자, 공백 제외)`
     severity = 'warning'
   } else {
-    message = `글자수 적정: ${count.toLocaleString()}자`
+    message = `글자수: ${count.toLocaleString()}자 (공백 제외, 목표 약 2,000자)`
     severity = 'info'
   }
 
-  return { name: '글자수 (2,500~3,000)', passed, severity, message }
+  return { name: '글자수 (공백 제외, 목표 ~2,000)', passed, severity, message }
 }
 
 // ── 2. 치과명 위치 검사 ──
@@ -202,6 +200,10 @@ function checkMedicalLaw(content: string): ValidationCheck {
     [/100%/, '과장 표현'],
     [/최첨단/, '과장 표현'],
     [/명의/, '과장 표현'],
+    [/가장\s*(유사|효과적|좋은|우수|중요|안전)/, '최상급 표현'],
+    [/내구성을\s*제공/, '효과 보장'],
+    [/심미성을\s*제공/, '효과 보장'],
+    [/기능을\s*제공/, '효과 보장'],
   ]
 
   for (const [pattern, category] of guaranteePatterns) {
@@ -239,6 +241,18 @@ function checkMedicalLaw(content: string): ValidationCheck {
   const clinicEffect = content.match(/저희\s*치과에서[는]?\s*.{0,20}(?:해결|치료해|개선|드리고)/)
   if (clinicEffect) {
     violations.push(`[치과+효과 연결] "${clinicEffect[0].substring(0, 40)}"`)
+  }
+
+  // "환자" 단어 본문 사용 검사 (서론 인사/결론 인사 제외한 본문)
+  const lines = content.split('\n')
+  const totalLines = lines.length
+  const bodyStart = Math.max(3, Math.floor(totalLines * 0.1))
+  const bodyEnd = Math.floor(totalLines * 0.9)
+  for (let i = bodyStart; i < bodyEnd; i++) {
+    if (lines[i] && /환자/.test(lines[i]) && !/이미지/.test(lines[i]) && !/alt:/.test(lines[i])) {
+      violations.push(`[환자 단어 사용] ${i + 1}번째 줄: "${lines[i].substring(0, 40)}..."`)
+      break // 첫 번째만 보고
+    }
   }
 
   const passed = violations.length === 0
@@ -295,27 +309,40 @@ function checkSideEffectNotice(content: string): ValidationCheck {
 
 // ── 8. 동의어 회전 검사 (같은 단어 과다 반복) ──
 function checkSynonymRotation(content: string): ValidationCheck {
-  // 주요 단어 반복 체크 (한 섹션 내 3회 이상이면 경고)
-  const watchWords = ['치료', '수술', '시술', '진행', '확인', '상태', '경우', '필요']
+  // 피드백: 치아/어금니 등 특정 단어 반복 심함 → 강화된 검사
+  const watchWordsStrict: { word: string; maxTotal: number; maxSection: number }[] = [
+    { word: '치아', maxTotal: 6, maxSection: 3 },
+    { word: '어금니', maxTotal: 5, maxSection: 3 },
+    { word: '치료', maxTotal: 8, maxSection: 4 },
+    { word: '잇몸', maxTotal: 5, maxSection: 3 },
+    { word: '수술', maxTotal: 6, maxSection: 3 },
+    { word: '시술', maxTotal: 6, maxSection: 3 },
+    { word: '진행', maxTotal: 7, maxSection: 3 },
+    { word: '확인', maxTotal: 7, maxSection: 3 },
+    { word: '상태', maxTotal: 6, maxSection: 3 },
+    { word: '경우', maxTotal: 6, maxSection: 3 },
+    { word: '필요', maxTotal: 6, maxSection: 3 },
+    { word: '관찰', maxTotal: 5, maxSection: 3 },
+  ]
   const issues: string[] = []
 
   // 섹션 단위 분리 (##로 나뉘는 블록)
   const sections = content.split(/^##\s/m)
 
-  for (const word of watchWords) {
+  for (const { word, maxTotal, maxSection } of watchWordsStrict) {
     const totalCount = (content.match(new RegExp(word, 'g')) || []).length
 
     // 섹션 내 집중 반복 체크
     for (let i = 0; i < sections.length; i++) {
       const sectionCount = (sections[i].match(new RegExp(word, 'g')) || []).length
-      if (sectionCount >= 4) {
-        issues.push(`"${word}" 섹션${i + 1}에서 ${sectionCount}회 집중 사용`)
+      if (sectionCount > maxSection) {
+        issues.push(`"${word}" 섹션${i + 1}에서 ${sectionCount}회 집중 (최대 ${maxSection})`)
       }
     }
 
-    // 전체 글에서 10회 이상이면 경고
-    if (totalCount >= 10) {
-      issues.push(`"${word}" 전체 ${totalCount}회 (동의어 교체 권장)`)
+    // 전체 글 반복 체크
+    if (totalCount > maxTotal) {
+      issues.push(`"${word}" 전체 ${totalCount}회 → 동의어 교체 필요 (최대 ${maxTotal})`)
     }
   }
 
@@ -324,8 +351,39 @@ function checkSynonymRotation(content: string): ValidationCheck {
     name: '동의어 회전',
     passed,
     severity: passed ? 'info' : 'warning',
-    message: passed ? '단어 반복 적정' : `단어 집중 반복 ${issues.length}건`,
-    details: issues.length > 0 ? issues.slice(0, 8) : undefined,
+    message: passed ? '단어 반복 적정' : `단어 반복 ${issues.length}건 (동의어 교체 필요)`,
+    details: issues.length > 0 ? issues.slice(0, 10) : undefined,
+  }
+}
+
+// ── 9. 제목 길이 검사 ──
+function checkTitleLength(content: string, clinicName: string): ValidationCheck {
+  // 첫 번째 # 헤딩에서 제목 추출
+  const titleMatch = content.match(/^#\s+(.+)$/m)
+  if (!titleMatch) {
+    return { name: '제목 길이', passed: true, severity: 'info', message: '제목 미발견 (검사 생략)' }
+  }
+
+  const title = titleMatch[1].trim()
+  const titleLen = title.length
+  const issues: string[] = []
+
+  if (titleLen > 40) {
+    issues.push(`제목 ${titleLen}자 (최대 35자 권장, 40자 초과!)`)
+  } else if (titleLen > 35) {
+    issues.push(`제목 ${titleLen}자 (35자 이내 권장)`)
+  }
+
+  if (clinicName && title.includes(clinicName)) {
+    issues.push(`제목에 치과명 "${clinicName}" 포함 (의료광고법 리스크)`)
+  }
+
+  const passed = issues.length === 0
+  return {
+    name: '제목 길이',
+    passed,
+    severity: !passed && titleLen > 40 ? 'error' : (!passed ? 'warning' : 'info'),
+    message: passed ? `제목 ${titleLen}자 (적정)` : issues.join(', '),
   }
 }
 
@@ -340,6 +398,7 @@ export function validatePost(
 ): ValidationResult {
   const checks: ValidationCheck[] = [
     checkCharCount(content),
+    checkTitleLength(content, options.clinicName || ''),
     checkClinicNamePosition(content, options.clinicName || ''),
     checkForbiddenEndings(content, options.writingMode || 'expert'),
     checkKeywordFrequency(content, options.clinicName || '', options.topic || ''),
