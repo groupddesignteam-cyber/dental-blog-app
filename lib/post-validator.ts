@@ -142,24 +142,28 @@ function checkForbiddenEndings(content: string, writingMode: string): Validation
 }
 
 // ── 4. 키워드 빈도 검사 ──
-function checkKeywordFrequency(content: string, clinicName: string, topic: string): ValidationCheck {
+function checkKeywordFrequency(content: string, clinicName: string, topic: string, mainKeyword?: string): ValidationCheck {
   const issues: string[] = []
   const info: string[] = []
 
-  // "치과" 빈도 체크 (최대 8회)
+  // "치과" 빈도 체크 (최대 7회)
   const dentalCount = (content.match(/치과/g) || []).length
-  if (dentalCount > 8) {
-    issues.push(`"치과" ${dentalCount}회 (최대 8회 초과)`)
+  if (dentalCount > 7) {
+    issues.push(`"치과" ${dentalCount}회 (최대 7회 초과)`)
   } else {
     info.push(`"치과" ${dentalCount}회`)
   }
 
-  // 치료 키워드 빈도 체크 (최대 6회)
+  // 치료 키워드 빈도 체크
+  // topic이 mainKeyword에 포함된 경우: mainKeyword 7회 + 단독 3회 = 최대 10회
+  // topic이 mainKeyword에 미포함: 최대 6회
   if (topic) {
     const escaped = topic.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     const topicCount = (content.match(new RegExp(escaped, 'g')) || []).length
-    if (topicCount > 6) {
-      issues.push(`"${topic}" ${topicCount}회 (최대 6회 초과)`)
+    const topicInMain = mainKeyword ? mainKeyword.includes(topic) : false
+    const topicThreshold = topicInMain ? 10 : 6
+    if (topicCount > topicThreshold) {
+      issues.push(`"${topic}" ${topicCount}회 (최대 ${topicThreshold}회 초과)`)
     } else {
       info.push(`"${topic}" ${topicCount}회`)
     }
@@ -313,8 +317,8 @@ function checkSynonymRotation(content: string): ValidationCheck {
       }
     }
 
-    // 전체 글에서 10회 이상이면 경고
-    if (totalCount >= 10) {
+    // 전체 글에서 7회 이상이면 경고
+    if (totalCount >= 7) {
       issues.push(`"${word}" 전체 ${totalCount}회 (동의어 교체 권장)`)
     }
   }
@@ -336,13 +340,14 @@ export function validatePost(
     clinicName?: string
     topic?: string
     writingMode?: string
+    mainKeyword?: string
   } = {}
 ): ValidationResult {
   const checks: ValidationCheck[] = [
     checkCharCount(content),
     checkClinicNamePosition(content, options.clinicName || ''),
     checkForbiddenEndings(content, options.writingMode || 'expert'),
-    checkKeywordFrequency(content, options.clinicName || '', options.topic || ''),
+    checkKeywordFrequency(content, options.clinicName || '', options.topic || '', options.mainKeyword),
     checkMedicalLaw(content),
     checkForbiddenWords(content),
     checkSideEffectNotice(content),

@@ -105,6 +105,7 @@ export default function ResultPreview({ result, isStreaming, streamContent }: Pr
     return validatePost(result.content, {
       topic: result.keywords?.main || '',
       writingMode: 'expert', // 상세 모드에서는 기본 임상
+      mainKeyword: result.keywords?.main || '',
     })
   }, [result])
 

@@ -180,8 +180,9 @@ function BatchValidationPanel({ caseItem }: { caseItem: BlogCase }) {
       clinicName: caseItem.clinicName,
       topic: caseItem.topic,
       writingMode: caseItem.writingMode,
+      mainKeyword: caseItem.mainKeyword,
     })
-  }, [caseItem.result?.content, caseItem.clinicName, caseItem.topic, caseItem.writingMode])
+  }, [caseItem.result?.content, caseItem.clinicName, caseItem.topic, caseItem.writingMode, caseItem.mainKeyword])
 
   if (!validation) return null
 
