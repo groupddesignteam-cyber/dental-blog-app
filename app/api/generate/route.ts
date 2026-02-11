@@ -13,6 +13,7 @@ import { INTRO_PATTERNS, BODY_PATTERNS, CLOSING_PATTERNS, TOPIC_PATTERNS, TRANSI
 import { generateMainKeyword, suggestSubKeywords } from '@/data/keywords'
 import { getSynonymInstruction } from '@/data/synonyms'
 import { formatLineBreaks } from '@/lib/line-formatter'
+import { postProcess } from '@/lib/post-processor'
 
 // RAG + 치과별 페르소나
 import { generateRAGContext, extractClinicPersona, generatePersonaPrompt, ClinicPersona } from '@/lib/sheets-rag'
@@ -1328,8 +1329,15 @@ export async function POST(request: NextRequest) {
           }
 
           const rawContent = contentMatch ? contentMatch[1].trim() : fullContent
+          // 금칙어·키워드빈도·동의어회전 후처리
+          const processed = postProcess(rawContent, {
+            topic: data.topic || '',
+            mainKeyword: mainKeyword,
+            clinicName: data.clinicName || '',
+            writingMode: data.writingMode,
+          })
           // 44byte 줄바꿈 후처리 (네이버 블로그 최적화)
-          const content = formatLineBreaks(rawContent)
+          const content = formatLineBreaks(processed)
           // 해시태그 제외, 공백 제외 글자수 계산
           metadata.charCount = countContentChars(content)
 

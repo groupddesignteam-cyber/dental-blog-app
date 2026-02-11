@@ -116,7 +116,7 @@ export default function DashboardPage() {
       {/* 버전 표시 */}
       <div className="mb-4 text-center">
         <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-gray-100 text-gray-500 text-xs font-mono rounded-full">
-          v2.8.0 — 키워드 빈도 최적화 + 동의어 회전 강화 + 검증 임계값 정합
+          v2.9.0 — 후처리 자동교정 (금칙어·키워드빈도·동의어회전·금지어미)
         </span>
       </div>
 
