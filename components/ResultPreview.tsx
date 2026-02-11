@@ -10,6 +10,10 @@ interface Props {
   result: GenerateResult | null
   isStreaming: boolean
   streamContent: string
+  region?: string
+  topic?: string
+  writingMode?: string
+  mainKeyword?: string
 }
 
 // 검증 결과 패널 컴포넌트
@@ -93,7 +97,7 @@ function CheckItem({ check }: { check: ValidationCheck }) {
   )
 }
 
-export default function ResultPreview({ result, isStreaming, streamContent }: Props) {
+export default function ResultPreview({ result, isStreaming, streamContent, region, topic, writingMode, mainKeyword }: Props) {
   const [copied, setCopied] = useState(false)
   const [activeTab, setActiveTab] = useState<'preview' | 'markdown' | 'html' | 'naver'>('preview')
 
@@ -103,11 +107,12 @@ export default function ResultPreview({ result, isStreaming, streamContent }: Pr
   const validation = useMemo(() => {
     if (!result?.content) return null
     return validatePost(result.content, {
-      topic: result.keywords?.main || '',
-      writingMode: 'expert', // 상세 모드에서는 기본 임상
-      mainKeyword: result.keywords?.main || '',
+      topic: topic || result.keywords?.main || '',
+      writingMode: writingMode || 'expert',
+      mainKeyword: mainKeyword || result.keywords?.main || '',
+      region: region || '',
     })
-  }, [result])
+  }, [result, region, topic, writingMode, mainKeyword])
 
   const handleCopy = async (text: string) => {
     await navigator.clipboard.writeText(text)

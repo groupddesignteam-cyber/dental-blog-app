@@ -1,4 +1,4 @@
-// 생성된 블로그 글 검증 모듈 (CLAUDE.md 규칙 기반)
+// 생성된 블로그 글 검증 모듈 (형태소 기반 키워드 시스템 v3.0)
 
 export interface ValidationCheck {
   name: string
@@ -14,9 +14,15 @@ export interface ValidationResult {
   score: number // 0-100
 }
 
-// ── 글자수 계산 (이미지/논문/부작용 고지 제외) ──
-function countContentChars(content: string): number {
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/** 해시태그·이미지·논문·부작용 고지 제외한 본문 텍스트 */
+function getCleanContent(content: string): string {
   let text = content
+  // 해시태그 제거
+  text = text.replace(/#[^\s#]+/g, '')
   // 이미지 플레이스홀더 제거
   text = text.replace(/📷\s*\[이미지[^\]]*\]/g, '')
   text = text.replace(/\[IMAGE_\d+\]/g, '')
@@ -27,6 +33,12 @@ function countContentChars(content: string): number {
   text = text.replace(/※[\s\S]*?부작용[\s\S]*?$/m, '')
   // 출처 제거
   text = text.replace(/\(출처:.*?\)/g, '')
+  return text
+}
+
+// ── 글자수 계산 (이미지/논문/부작용 고지 제외) ──
+function countContentChars(content: string): number {
+  let text = getCleanContent(content)
   // 마크다운 문법 제거
   text = text.replace(/^#{1,3}\s*/gm, '')
   text = text.replace(/\*\*(.*?)\*\*/g, '$1')
@@ -141,38 +153,62 @@ function checkForbiddenEndings(content: string, writingMode: string): Validation
   }
 }
 
-// ── 4. 키워드 빈도 검사 ──
-function checkKeywordFrequency(content: string, clinicName: string, topic: string, mainKeyword?: string): ValidationCheck {
+// ── 4. 형태소 기반 키워드 빈도 검사 ──
+function checkKeywordFrequency(
+  content: string,
+  clinicName: string,
+  topic: string,
+  mainKeyword?: string,
+  region?: string
+): ValidationCheck {
   const issues: string[] = []
   const info: string[] = []
+  const cleanContent = getCleanContent(content)
 
-  // "치과" 빈도 체크 (최대 7회)
-  const dentalCount = (content.match(/치과/g) || []).length
-  if (dentalCount > 7) {
-    issues.push(`"치과" ${dentalCount}회 (최대 7회 초과)`)
-  } else {
-    info.push(`"치과" ${dentalCount}회`)
+  // morphemeB 추출
+  const morphemeB = (mainKeyword && region)
+    ? mainKeyword.replace(region, '').trim() || ''
+    : ''
+
+  // 형태소A (region) 카운트: 목표 7, 5~9 OK
+  if (region) {
+    const regionCount = (cleanContent.match(new RegExp(escapeRegex(region), 'g')) || []).length
+    if (regionCount > 9) {
+      issues.push(`"${region}" ${regionCount}회 (형태소A 목표 7, 최대 9 초과)`)
+    } else if (regionCount < 5) {
+      issues.push(`"${region}" ${regionCount}회 (형태소A 목표 7, 최소 5 미달)`)
+    } else {
+      info.push(`"${region}" ${regionCount}회 (형태소A)`)
+    }
   }
 
-  // 치료 키워드 빈도 체크
-  // topic이 mainKeyword에 포함된 경우: mainKeyword 7회 + 단독 3회 = 최대 10회
-  // topic이 mainKeyword에 미포함: 최대 6회
-  if (topic) {
-    const escaped = topic.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    const topicCount = (content.match(new RegExp(escaped, 'g')) || []).length
-    const topicInMain = mainKeyword ? mainKeyword.includes(topic) : false
-    const topicThreshold = topicInMain ? 10 : 6
-    if (topicCount > topicThreshold) {
-      issues.push(`"${topic}" ${topicCount}회 (최대 ${topicThreshold}회 초과)`)
+  // 형태소B 카운트: 목표 7, 5~9 OK
+  if (morphemeB) {
+    const morphBCount = (cleanContent.match(new RegExp(escapeRegex(morphemeB), 'g')) || []).length
+    if (morphBCount > 9) {
+      issues.push(`"${morphemeB}" ${morphBCount}회 (형태소B 목표 7, 최대 9 초과)`)
+    } else if (morphBCount < 5) {
+      issues.push(`"${morphemeB}" ${morphBCount}회 (형태소B 목표 7, 최소 5 미달)`)
     } else {
-      info.push(`"${topic}" ${topicCount}회`)
+      info.push(`"${morphemeB}" ${morphBCount}회 (형태소B)`)
+    }
+  }
+
+  // topic이 morphemeB와 다른 경우 = 서브키워드 (max 6)
+  if (topic && topic !== morphemeB) {
+    const escaped = escapeRegex(topic)
+    const topicCount = (cleanContent.match(new RegExp(escaped, 'g')) || []).length
+    if (topicCount > 6) {
+      issues.push(`"${topic}" ${topicCount}회 (서브키워드 최대 6 초과)`)
+    } else {
+      info.push(`"${topic}" ${topicCount}회 (서브키워드)`)
     }
   }
 
   // 치과명 빈도 체크 (최대 3회: 서론1 + 결론1~2)
   if (clinicName) {
-    const escaped = clinicName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    const clinicCount = (content.match(new RegExp(escaped, 'g')) || []).length
+    const escaped = escapeRegex(clinicName)
+    const clinicCount = (cleanContent.match(new RegExp(escaped, 'g')) || []).length
     if (clinicCount > 3) {
       issues.push(`"${clinicName}" ${clinicCount}회 (최대 3회 초과)`)
     } else {
@@ -182,10 +218,10 @@ function checkKeywordFrequency(content: string, clinicName: string, topic: strin
 
   const passed = issues.length === 0
   return {
-    name: '키워드 빈도',
+    name: '키워드 빈도 (형태소)',
     passed,
     severity: passed ? 'info' : 'warning',
-    message: passed ? `키워드 빈도 적정` : `키워드 과다 ${issues.length}건`,
+    message: passed ? `키워드 빈도 적정` : `키워드 빈도 이슈 ${issues.length}건`,
     details: [...issues, ...info],
   }
 }
@@ -206,6 +242,11 @@ function checkMedicalLaw(content: string): ValidationCheck {
     [/100%/, '과장 표현'],
     [/최첨단/, '과장 표현'],
     [/명의/, '과장 표현'],
+    [/제일|No\.?\s*1|기적의|획기적/, '과장 표현'],
+    [/무통(?!증)/, '부작용 단정'],
+    [/부작용\s*(?:0%|없|zero)/, '부작용 단정'],
+    [/아프지\s*않/, '부작용 단정'],
+    [/통증\s*없는/, '부작용 단정'],
   ]
 
   for (const [pattern, category] of guaranteePatterns) {
@@ -269,7 +310,7 @@ function checkForbiddenWords(content: string): ValidationCheck {
 
   for (const word of forbiddenWords) {
     // 독립 단어 매칭 (앞뒤가 공백/줄바꿈/문장부호/시작/끝)
-    const regex = new RegExp(`(?:^|[\\s,.'"\u201C\u201D\u00B7(])${word}(?=[\\s,.'"\u201C\u201D\u00B7)!?]|$)`, 'gm')
+    const regex = new RegExp(`(?:^|[\\s,.'"\u201C\u201D\u00B7(])${escapeRegex(word)}(?=[\\s,.'"\u201C\u201D\u00B7)!?]|$)`, 'gm')
     const matches = content.match(regex)
     if (matches && matches.length > 0) {
       found.push(`"${word}" ${matches.length}회`)
@@ -298,20 +339,61 @@ function checkSideEffectNotice(content: string): ValidationCheck {
 }
 
 // ── 8. 동의어 회전 검사 (같은 단어 과다 반복) ──
-function checkSynonymRotation(content: string): ValidationCheck {
-  // 주요 단어 반복 체크 (한 섹션 내 3회 이상이면 경고)
+function checkSynonymRotation(content: string, mainKeyword?: string, region?: string): ValidationCheck {
+  const cleanContent = getCleanContent(content)
+
+  // morphemeB 추출 (복합어이면 내부 단어를 보호)
+  const morphemeB = (mainKeyword && region)
+    ? mainKeyword.replace(region, '').trim() || ''
+    : ''
+
+  // 주요 단어 반복 체크 (한 섹션 내 4회 이상이면 경고)
   const watchWords = ['치료', '수술', '시술', '진행', '확인', '상태', '경우', '필요']
   const issues: string[] = []
 
+  // 복합어 보호 목록
+  const protectedCompounds = [
+    '근관치료', '신경치료', '교정치료', '치주치료', '보존치료',
+    '보철치료', '레이저치료', '불소치료', '잇몸치료', '예방치료',
+  ]
+
   // 섹션 단위 분리 (##로 나뉘는 블록)
-  const sections = content.split(/^##\s/m)
+  const sections = cleanContent.split(/^##\s/m)
 
   for (const word of watchWords) {
-    const totalCount = (content.match(new RegExp(word, 'g')) || []).length
+    // 복합어 내부의 카운트를 제외한 독립 카운트
+    let totalCount = 0
+    const wordRegex = new RegExp(escapeRegex(word), 'g')
+    let wm: RegExpExecArray | null
+    while ((wm = wordRegex.exec(cleanContent)) !== null) {
+      const idx = wm.index
+      const isInCompound = protectedCompounds.some(compound => {
+        if (!compound.includes(word) || compound === word) return false
+        const posInCompound = compound.indexOf(word)
+        const compoundStart = idx - posInCompound
+        if (compoundStart < 0 || compoundStart + compound.length > cleanContent.length) return false
+        return cleanContent.substring(compoundStart, compoundStart + compound.length) === compound
+      })
+      if (!isInCompound) totalCount++
+    }
 
-    // 섹션 내 집중 반복 체크
+    // 섹션 내 집중 반복 체크 (복합어 제외 카운트)
     for (let i = 0; i < sections.length; i++) {
-      const sectionCount = (sections[i].match(new RegExp(word, 'g')) || []).length
+      let sectionCount = 0
+      const sectionRegex = new RegExp(escapeRegex(word), 'g')
+      let sm: RegExpExecArray | null
+      while ((sm = sectionRegex.exec(sections[i])) !== null) {
+        const idx = sm.index
+        const isInCompound = protectedCompounds.some(compound => {
+          if (!compound.includes(word) || compound === word) return false
+          const posInCompound = compound.indexOf(word)
+          const compoundStart = idx - posInCompound
+          if (compoundStart < 0 || compoundStart + compound.length > sections[i].length) return false
+          return sections[i].substring(compoundStart, compoundStart + compound.length) === compound
+        })
+        if (!isInCompound) sectionCount++
+      }
+
       if (sectionCount >= 4) {
         issues.push(`"${word}" 섹션${i + 1}에서 ${sectionCount}회 집중 사용`)
       }
@@ -341,23 +423,22 @@ export function validatePost(
     topic?: string
     writingMode?: string
     mainKeyword?: string
+    region?: string
   } = {}
 ): ValidationResult {
   const checks: ValidationCheck[] = [
     checkCharCount(content),
     checkClinicNamePosition(content, options.clinicName || ''),
     checkForbiddenEndings(content, options.writingMode || 'expert'),
-    checkKeywordFrequency(content, options.clinicName || '', options.topic || '', options.mainKeyword),
+    checkKeywordFrequency(content, options.clinicName || '', options.topic || '', options.mainKeyword, options.region),
     checkMedicalLaw(content),
     checkForbiddenWords(content),
     checkSideEffectNotice(content),
-    checkSynonymRotation(content),
+    checkSynonymRotation(content, options.mainKeyword, options.region),
   ]
 
   const errorCount = checks.filter(c => !c.passed && c.severity === 'error').length
   const warningCount = checks.filter(c => !c.passed && c.severity === 'warning').length
-  const totalChecks = checks.length
-  const passedChecks = checks.filter(c => c.passed).length
 
   // 점수: error -15, warning -8
   const score = Math.max(0, Math.min(100, 100 - (errorCount * 15) - (warningCount * 8)))

@@ -1,8 +1,9 @@
 /**
  * LLM 출력 후처리 모듈
  * - 금칙어 자동 치환
+ * - 의료법 위반 표현 자동 치환
  * - ~요 금지 어미 치환 (안전 패턴만)
- * - 키워드 빈도 초과 시 동의어 교체
+ * - 형태소 기반 키워드 빈도 조절
  * - 동의어 회전 강제 적용
  */
 
@@ -90,6 +91,31 @@ export function sanitizeForbiddenWords(content: string): string {
 }
 
 // ============================================================
+// 1.5. 의료법 위반 표현 자동 치환
+// ============================================================
+
+const MEDICAL_REPLACEMENTS: [RegExp, string][] = [
+  [/무통(?!증)/g, '저통증'],
+  [/통증\s*없는/g, '통증을 줄이는'],
+  [/아프지\s*않/g, '통증이 적'],
+  [/완벽한\s*치료/g, '정밀한 치료'],
+  [/완벽한\s*시술/g, '정밀한 시술'],
+  [/완벽한\s*결과/g, '양호한 결과'],
+  [/이빨/g, '치아'],
+  [/때우기/g, '수복 치료'],
+  [/씌우기/g, '보철 치료'],
+]
+
+/** 의료법 위반 가능 표현을 안전한 표현으로 자동 치환 */
+export function sanitizeMedicalExpressions(content: string): string {
+  let result = content
+  for (const [pattern, replacement] of MEDICAL_REPLACEMENTS) {
+    result = result.replace(pattern, replacement)
+  }
+  return result
+}
+
+// ============================================================
 // 2. ~요 금지 어미 치환 (안전 패턴만, 문장 끝에서만)
 // ============================================================
 
@@ -126,7 +152,7 @@ export function sanitizeForbiddenEndings(content: string, writingMode?: string):
 }
 
 // ============================================================
-// 3. 키워드 빈도 초과 교정
+// 3. 형태소 기반 키워드 빈도 교정
 // ============================================================
 
 // 치료 관련 복합어 — 내부의 부분 단어를 교체하면 안 됨
@@ -210,20 +236,42 @@ function reduceWordCount(
   return result
 }
 
-/** 토픽 키워드(임플란트, 근관치료 등) 빈도 제한 */
-export function enforceKeywordLimit(
+/**
+ * 형태소 기반 키워드 빈도 제한
+ *
+ * 메인키워드 = 형태소A(region) + 형태소B(치과 or topic)
+ * 각 형태소 목표 7회 → 8회 초과 시 축소
+ *
+ * - "지역+치과" 타입: morphemeB = "치과", topic은 서브키워드(별도 max 5)
+ * - "지역+진료" 타입: morphemeB = topic, topic은 이미 7회에 포함
+ */
+export function enforceMorphemeLimit(
   content: string,
-  topic: string,
-  mainKeyword: string
+  options: PostProcessOptions
 ): string {
-  const synonyms = SYNONYM_DICTIONARY[topic]
-  if (!synonyms || synonyms.length === 0) return content
+  let result = content
+  const { region, mainKeyword, topic } = options
 
-  const topicInMain = mainKeyword.includes(topic)
-  // 검증기 임계값(10/6)보다 여유 있게 설정
-  const maxCount = topicInMain ? 7 : 5
+  // morphemeB 추출: mainKeyword에서 region 제거
+  const morphemeB = mainKeyword.replace(region, '').trim() || '치과'
 
-  return reduceWordCount(content, topic, maxCount, synonyms)
+  // 형태소B 빈도 제한 (8회 초과 시 동의어 교체)
+  if (morphemeB) {
+    const synonymsB = SYNONYM_DICTIONARY[morphemeB]
+    if (synonymsB && synonymsB.length > 0) {
+      result = reduceWordCount(result, morphemeB, 8, synonymsB)
+    }
+  }
+
+  // topic이 morphemeB와 다른 경우 = 서브키워드 → max 5
+  if (topic && topic !== morphemeB) {
+    const topicSynonyms = SYNONYM_DICTIONARY[topic]
+    if (topicSynonyms && topicSynonyms.length > 0) {
+      result = reduceWordCount(result, topic, 5, topicSynonyms)
+    }
+  }
+
+  return result
 }
 
 // ============================================================
@@ -237,15 +285,23 @@ const WATCH_WORDS = ['치료', '시술', '수술', '진행', '확인', '상태',
  * - 전체 6회 이하로 유지
  * - 섹션(##)당 3회 이하로 유지
  * - 이미 처리된 단어의 동의어는 건너뜀 (연쇄 교체 방지)
+ * - morphemeB가 복합어(근관치료 등)이면 해당 단어는 동의어 회전에서 보호
  */
-export function rotateSynonyms(content: string): string {
+export function rotateSynonyms(content: string, morphemeB?: string): string {
   let result = content
   const processedWords = new Set<string>()
+
+  // morphemeB가 복합어(예: 근관치료)이면 그 자체를 보호
+  if (morphemeB && morphemeB.length > 2) {
+    processedWords.add(morphemeB)
+  }
 
   for (const word of WATCH_WORDS) {
     // 연쇄 교체 방지: 이전 단어의 동의어로 이미 등장한 단어는 건너뜀
     if (processedWords.has(word)) continue
 
+    // morphemeB가 이 word를 포함하는 복합어이면 건너뜀
+    // 예: morphemeB="근관치료" → "치료" 카운트에서 "근관치료" 내부 제외됨 (findSafeOccurrences에서 처리)
     const synonyms = SYNONYM_DICTIONARY[word]
     if (!synonyms || synonyms.length === 0) continue
 
@@ -301,6 +357,7 @@ export interface PostProcessOptions {
   topic: string
   mainKeyword: string
   clinicName: string
+  region: string
   writingMode?: string // 'expert' | 'information'
 }
 
@@ -310,16 +367,20 @@ export function postProcess(content: string, options: PostProcessOptions): strin
   // Step 1: 금칙어 치환
   result = sanitizeForbiddenWords(result)
 
+  // Step 1.5: 의료법 위반 표현 자동 치환
+  result = sanitizeMedicalExpressions(result)
+
   // Step 2: ~요 금지 어미 치환 (안전 패턴만)
   result = sanitizeForbiddenEndings(result, options.writingMode)
 
-  // Step 3: 토픽 키워드 빈도 제한
-  if (options.topic) {
-    result = enforceKeywordLimit(result, options.topic, options.mainKeyword)
+  // Step 3: 형태소 기반 키워드 빈도 제한
+  if (options.region && options.mainKeyword) {
+    result = enforceMorphemeLimit(result, options)
   }
 
   // Step 4: 동의어 회전 (고빈도 일반 단어)
-  result = rotateSynonyms(result)
+  const morphemeB = options.mainKeyword.replace(options.region, '').trim() || ''
+  result = rotateSynonyms(result, morphemeB)
 
   return result
 }

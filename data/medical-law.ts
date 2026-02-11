@@ -41,15 +41,21 @@ export const REQUIRED_DISCLAIMERS: Record<string, string> = {
 
 // 금지되는 표현 패턴
 export const FORBIDDEN_PATTERNS = [
-  // 과장 광고
+  // 과장 광고 — 최상급 표현
   { pattern: /최고|최첨단|최신|유일|독보적/g, reason: '과장 광고' },
+  { pattern: /제일|No\.?\s*1|특화|기적의|획기적|최상/g, reason: '과장 광고' },
   { pattern: /완치|100%\s*성공|무통증/g, reason: '과장 광고' },
   { pattern: /\d+위|국내\s*최초/g, reason: '비교 광고' },
-  // 환자 유인
+  // 통증/부작용 단정 금지
+  { pattern: /무통(?!증)|부작용\s*(?:0%|없|zero)|완벽한\s*(?:치료|시술|결과)/g, reason: '부작용 단정 금지' },
+  { pattern: /아프지\s*않|통증\s*없는|부작용이?\s*없/g, reason: '부작용 단정 금지' },
+  // 환자 유인/알선 금지
   { pattern: /할인|이벤트|무료|저렴|싼|가성비/g, reason: '환자 유인' },
-  { pattern: /사은품|경품/g, reason: '환자 유인' },
-  // 후기 형식
+  { pattern: /사은품|경품|상품권|기프티콘/g, reason: '환자 유인' },
+  { pattern: /소개\s*시.*할인|지인\s*소개/g, reason: '환자 유인' },
+  // 후기 형식 금지
   { pattern: /저는.*치과에서|치료\s*후기|체험담/g, reason: '후기 형식 금지' },
+  { pattern: /환자\s*후기|수술\s*후기|리뷰|솔직\s*후기|치료\s*경험담/g, reason: '후기 형식 금지' },
   // 내원 유도 (치과명 + 내원 권유)
   { pattern: /[가-힣]+치과(에서|로|에)\s*(상담|내원|방문).*(오세요|와주세요|찾아주세요|받아보세요)/g, reason: '내원 유도 광고' },
   { pattern: /(저희|우리)\s*(치과|병원)(에서|로|에)\s*(상담|내원|방문)/g, reason: '내원 유도 광고' },

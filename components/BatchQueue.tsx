@@ -181,6 +181,7 @@ function BatchValidationPanel({ caseItem }: { caseItem: BlogCase }) {
       topic: caseItem.topic,
       writingMode: caseItem.writingMode,
       mainKeyword: caseItem.mainKeyword,
+      region: caseItem.region,
     })
   }, [caseItem.result?.content, caseItem.clinicName, caseItem.topic, caseItem.writingMode, caseItem.mainKeyword])
 

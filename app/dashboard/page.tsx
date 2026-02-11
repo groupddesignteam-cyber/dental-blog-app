@@ -14,8 +14,10 @@ export default function DashboardPage() {
   const [result, setResult] = useState<GenerateResult | null>(null)
   const [streamContent, setStreamContent] = useState('')
   const [error, setError] = useState('')
+  const [lastFormData, setLastFormData] = useState<GenerateFormData | null>(null)
 
   const handleSubmit = async (data: GenerateFormData) => {
+    setLastFormData(data)
     setIsLoading(true)
     setError('')
     setResult(null)
@@ -116,7 +118,7 @@ export default function DashboardPage() {
       {/* 버전 표시 */}
       <div className="mb-4 text-center">
         <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-gray-100 text-gray-500 text-xs font-mono rounded-full">
-          v2.9.0 — 후처리 자동교정 (금칙어·키워드빈도·동의어회전·금지어미)
+          v3.0.0 — 형태소 키워드 시스템 + 의료법 6원칙
         </span>
       </div>
 
@@ -148,6 +150,10 @@ export default function DashboardPage() {
                 result={result}
                 isStreaming={isLoading}
                 streamContent={streamContent}
+                region={lastFormData?.region}
+                topic={lastFormData?.topic}
+                writingMode={lastFormData?.writingMode}
+                mainKeyword={lastFormData?.mainKeyword}
               />
             </div>
           </div>
