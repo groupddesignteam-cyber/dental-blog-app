@@ -184,13 +184,20 @@ function checkKeywordFrequency(
 
   // 형태소B 카운트: 목표 7, 5~9 OK
   if (morphemeB) {
-    const morphBCount = (cleanContent.match(new RegExp(escapeRegex(morphemeB), 'g')) || []).length
+    const morphBTotal = (cleanContent.match(new RegExp(escapeRegex(morphemeB), 'g')) || []).length
+    // 치과명 내부에 포함된 morphemeB 횟수 차감 (예: "부평치과" 안의 "치과")
+    let clinicOverlap = 0
+    if (clinicName && clinicName.includes(morphemeB) && clinicName !== morphemeB) {
+      clinicOverlap = (cleanContent.match(new RegExp(escapeRegex(clinicName), 'g')) || []).length
+    }
+    const morphBCount = morphBTotal - clinicOverlap
+
     if (morphBCount > 9) {
-      issues.push(`"${morphemeB}" ${morphBCount}회 (형태소B 목표 7, 최대 9 초과)`)
+      issues.push(`"${morphemeB}" ${morphBCount}회 (형태소B 목표 7, 최대 9 초과)${clinicOverlap ? ` [치과명 내 ${clinicOverlap}회 제외]` : ''}`)
     } else if (morphBCount < 5) {
-      issues.push(`"${morphemeB}" ${morphBCount}회 (형태소B 목표 7, 최소 5 미달)`)
+      issues.push(`"${morphemeB}" ${morphBCount}회 (형태소B 목표 7, 최소 5 미달)${clinicOverlap ? ` [치과명 내 ${clinicOverlap}회 제외]` : ''}`)
     } else {
-      info.push(`"${morphemeB}" ${morphBCount}회 (형태소B)`)
+      info.push(`"${morphemeB}" ${morphBCount}회 (형태소B)${clinicOverlap ? ` [치과명 내 ${clinicOverlap}회 제외]` : ''}`)
     }
   }
 
@@ -329,7 +336,13 @@ function checkForbiddenWords(content: string): ValidationCheck {
 
 // ── 7. 부작용 고지 검사 ──
 function checkSideEffectNotice(content: string): ValidationCheck {
-  const hasSideEffect = /※.*부작용/.test(content) || /부작용이?\s*발생/.test(content)
+  const hasSideEffect =
+    /※.*부작용/.test(content) ||
+    /부작용이?\s*발생/.test(content) ||
+    /부작용이?\s*나타날/.test(content) ||
+    /개인에\s*따라\s*결과가?\s*다를/.test(content) ||
+    /출혈.*부종.*감염/.test(content) ||
+    /시린\s*증상이?\s*나타날/.test(content)
   return {
     name: '부작용 고지',
     passed: hasSideEffect,
@@ -437,12 +450,27 @@ export function validatePost(
     checkSynonymRotation(content, options.mainKeyword, options.region),
   ]
 
-  const errorCount = checks.filter(c => !c.passed && c.severity === 'error').length
-  const warningCount = checks.filter(c => !c.passed && c.severity === 'warning').length
+  // 항목별 가중치 차등 적용
+  const weights: Record<string, { error: number; warning: number }> = {
+    '의료법 준수': { error: 25, warning: 12 },
+    '치과명 위치': { error: 20, warning: 10 },
+    '금지 어미': { error: 15, warning: 8 },
+    '키워드 빈도 (형태소)': { error: 10, warning: 6 },
+    '동의어 회전': { error: 8, warning: 5 },
+    '글자수 (2,500~3,000)': { error: 10, warning: 5 },
+    '금칙어': { error: 8, warning: 5 },
+    '부작용 고지': { error: 5, warning: 4 },
+  }
 
-  // 점수: error -15, warning -8
-  const score = Math.max(0, Math.min(100, 100 - (errorCount * 15) - (warningCount * 8)))
-  const passed = errorCount === 0
+  let deduction = 0
+  for (const check of checks) {
+    if (check.passed) continue
+    const w = weights[check.name] || { error: 15, warning: 8 }
+    deduction += check.severity === 'error' ? w.error : w.warning
+  }
+
+  const score = Math.max(0, Math.min(100, 100 - deduction))
+  const passed = checks.filter(c => !c.passed && c.severity === 'error').length === 0
 
   return { passed, checks, score }
 }

@@ -10,6 +10,7 @@ interface Props {
   result: GenerateResult | null
   isStreaming: boolean
   streamContent: string
+  clinicName?: string
   region?: string
   topic?: string
   writingMode?: string
@@ -97,7 +98,7 @@ function CheckItem({ check }: { check: ValidationCheck }) {
   )
 }
 
-export default function ResultPreview({ result, isStreaming, streamContent, region, topic, writingMode, mainKeyword }: Props) {
+export default function ResultPreview({ result, isStreaming, streamContent, clinicName, region, topic, writingMode, mainKeyword }: Props) {
   const [copied, setCopied] = useState(false)
   const [activeTab, setActiveTab] = useState<'preview' | 'markdown' | 'html' | 'naver'>('preview')
 
@@ -107,12 +108,13 @@ export default function ResultPreview({ result, isStreaming, streamContent, regi
   const validation = useMemo(() => {
     if (!result?.content) return null
     return validatePost(result.content, {
+      clinicName: clinicName || '',
       topic: topic || result.keywords?.main || '',
       writingMode: writingMode || 'expert',
       mainKeyword: mainKeyword || result.keywords?.main || '',
       region: region || '',
     })
-  }, [result, region, topic, writingMode, mainKeyword])
+  }, [result, clinicName, region, topic, writingMode, mainKeyword])
 
   const handleCopy = async (text: string) => {
     await navigator.clipboard.writeText(text)

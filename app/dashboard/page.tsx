@@ -150,6 +150,7 @@ export default function DashboardPage() {
                 result={result}
                 isStreaming={isLoading}
                 streamContent={streamContent}
+                clinicName={lastFormData?.clinicName}
                 region={lastFormData?.region}
                 topic={lastFormData?.topic}
                 writingMode={lastFormData?.writingMode}
