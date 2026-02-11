@@ -1123,8 +1123,8 @@ export default function BatchQueue({ onResultsReady }: Props) {
             <textarea
               value={memo}
               onChange={(e) => setMemo(e.target.value)}
-              rows={8}
-              placeholder={"예:\n#36 치근단 병소 관찰\n저작 시 통증 호소\n골이식 후 임플란트 식립 예정\n\n💡 상세할수록 글 퀄리티 ↑\n- 치식번호, 부위, 증상, 치료 단계\n- 소주제, 강조 포인트"}
+              rows={4}
+              placeholder={"예:\n#36 치근단 병소 관찰\n저작 시 통증 호소\n골이식 후 임플란트 식립 예정"}
               className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 resize-y"
             />
           </div>

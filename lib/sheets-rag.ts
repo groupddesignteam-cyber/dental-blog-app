@@ -277,41 +277,31 @@ export function analyzePostPatterns(posts: SimilarPost[]): PatternAnalysis {
 
 // RAG 컨텍스트 생성 (치과명이 있으면 해당 치과 글 우선 참조)
 export async function generateRAGContext(queryTopic: string, clinicName?: string): Promise<string> {
-  // 1단계: 해당 치과 글 검색 (스타일 + 주제)
-  let clinicPosts: SimilarPost[] = []
+  // 치과명이 있으면 해당 치과 글 우선 검색
+  let similarPosts: SimilarPost[] = []
   if (clinicName) {
-    clinicPosts = await findClinicTopicPosts(clinicName, queryTopic)
+    similarPosts = await findClinicTopicPosts(clinicName, queryTopic)
+  }
+  // 치과 글이 없으면 전체 DB에서 주제 유사도로 검색
+  if (similarPosts.length === 0) {
+    similarPosts = await findSimilarPosts(queryTopic)
   }
 
-  // 2단계: 치과 글이 아예 없으면 전체 DB에서 주제 유사도로 검색
-  if (clinicPosts.length === 0) {
-    clinicPosts = await findSimilarPosts(queryTopic)
-  }
-
-  if (clinicPosts.length === 0) {
+  if (similarPosts.length === 0) {
     return '[참조 가능한 기존 글 없음]'
   }
 
-  // 3단계: 주제 매칭 품질 확인 → 낮으면 다른 치과에서 치료 흐름 빌려오기
-  const topScore = clinicPosts[0]?.score || 0
-  const hasGoodTopicMatch = topScore >= 0.7
-  let topicRefPosts: SimilarPost[] = []
-
-  if (!hasGoodTopicMatch && clinicName) {
-    topicRefPosts = await findTopicReferencePosts(queryTopic, clinicName, 2)
-  }
-
-  const analysis = analyzePostPatterns(clinicPosts)
+  const analysis = analyzePostPatterns(similarPosts)
 
   let context = `
 ## 📚 기존 글 DB 참조 결과
 
-### ${clinicName ? `${clinicName} ` : ''}유사 주제 글 ${clinicPosts.length}개 발견
+### ${clinicName ? `${clinicName} ` : ''}유사 주제 글 ${similarPosts.length}개 발견
 
 `
 
-  for (let i = 0; i < Math.min(clinicPosts.length, 3); i++) {
-    const post = clinicPosts[i]
+  for (let i = 0; i < similarPosts.length; i++) {
+    const post = similarPosts[i]
     context += `
 #### 참조 글 ${i + 1}: ${post.topic} (${post.clinic})
 - 유사도: ${post.score.toFixed(2)}
@@ -343,28 +333,6 @@ ${analysis.commonExpressions.cta.slice(0, 3).join(', ') || '없음'}
 ⚠️ 위 내용은 패턴 참조용입니다. 그대로 복사하지 말고 변형하여 사용하세요.
 `
 
-  // 다른 치과의 치료 흐름 참고 섹션 추가
-  if (topicRefPosts.length > 0) {
-    context += `
-### 🔄 치료 흐름 참고 (다른 치과의 "${queryTopic}" 글)
-⚠️ 아래는 **치료 흐름/구조만 참고**하세요! 스타일/톤은 위 ${clinicName} 패턴을 따르세요!
-
-`
-    for (let i = 0; i < topicRefPosts.length; i++) {
-      const post = topicRefPosts[i]
-      const intro = extractIntro(post.content, 3)
-      const middle = post.content.slice(
-        Math.floor(post.content.length * 0.3),
-        Math.floor(post.content.length * 0.5)
-      )
-      context += `**치료 흐름 ${i + 1}** (${post.topic}):
-[치료 흐름 서두] ${intro.slice(0, 200)}
-[치료 흐름 본문] ${middle.slice(0, 400)}...
----
-`
-    }
-  }
-
   return context
 }
 
@@ -389,8 +357,6 @@ export interface ClinicPersona {
   sampleContent: string      // 참조용 본문 샘플 (가장 유사한 글)
   avgLength: number
   postCount: number
-  topicMatchQuality: 'high' | 'medium' | 'low' | 'none'
-  styleFingerprint: string[] // 치과별 고유 스타일 특성 (P3: 거래처별 차별화용)
 }
 
 // 어미 추출 (문어체/구어체 분류)
@@ -550,159 +516,6 @@ export async function findClinicTopicPosts(
   return results
 }
 
-// 다른 치과에서 같은 주제 글 찾기 (치료 흐름/구조 참고용)
-export async function findTopicReferencePosts(
-  topic: string,
-  excludeClinic: string,
-  topN: number = 2
-): Promise<SimilarPost[]> {
-  const rows = await fetchSheetDataWithApiKey('Rawdata!A2:F')
-
-  if (!rows || rows.length === 0) return []
-
-  const results: SimilarPost[] = []
-  const queryCategory = getCategory(topic)
-  const excludeTrimmed = excludeClinic.trim()
-
-  for (const row of rows) {
-    const rowClinic = (row[1] || '').trim()
-    const rowTopic = (row[2] || '').trim()
-    const content = row[5] || ''
-
-    if (!content || content.length < 100) continue
-
-    // 현재 치과 제외
-    if (rowClinic.includes(excludeTrimmed) || excludeTrimmed.includes(rowClinic)) continue
-
-    // 주제 매칭 점수 계산
-    let score = 0
-    const rowCategory = getCategory(rowTopic)
-    if (queryCategory && rowCategory === queryCategory) score += 0.5
-
-    // 주제 단어 매칭
-    const queryWords = topic.split(/[,\s]+/).filter(w => w.length >= 2)
-    for (const word of queryWords) {
-      if (rowTopic.includes(word)) score += 0.2
-      if (content.slice(0, 500).includes(word)) score += 0.1
-    }
-
-    score += similarityScore(topic, rowTopic) * 0.2
-
-    if (score >= 0.3) {
-      results.push({ clinic: rowClinic, topic: rowTopic, content, score })
-    }
-  }
-
-  results.sort((a, b) => b.score - a.score)
-  const selected = results.slice(0, topN)
-
-  if (selected.length > 0) {
-    console.log(`[TopicRef] "${topic}" 치료 흐름 참고 ${selected.length}개 (${selected.map(p => p.clinic).join(', ')})`)
-  }
-
-  return selected
-}
-
-// 치과별 고유 스타일 핑거프린트 추출 (P3: 거래처별 차별화)
-function extractStyleFingerprint(allContent: string, intros: string[]): string[] {
-  const fp: string[] = []
-
-  // 1. 서문 시작 패턴 분석
-  const firstLines = intros.map(intro => {
-    const lines = intro.split('\n').filter(l => l.trim() && !l.includes('안녕하세요'))
-    return lines[0] || ''
-  }).filter(Boolean)
-
-  let introType = ''
-  const questionIntros = firstLines.filter(l => /\?/.test(l)).length
-  const clinicalIntros = firstLines.filter(l => /관찰|소견|확인|방사선|사진상/.test(l)).length
-  const empathyIntros = firstLines.filter(l => /적\s?있|느끼|겪|불편|시린/.test(l)).length
-
-  if (questionIntros > firstLines.length * 0.5) {
-    introType = '질문형 도입 (독자에게 질문을 던지며 시작)'
-  } else if (clinicalIntros > firstLines.length * 0.3) {
-    introType = '소견 직입형 (임상 소견으로 바로 시작)'
-  } else if (empathyIntros > firstLines.length * 0.3) {
-    introType = '공감형 도입 (증상/경험에 공감하며 시작)'
-  } else {
-    introType = '주제 설명형 (주제를 자연스럽게 소개하며 시작)'
-  }
-  fp.push(`서문 패턴: ${introType}`)
-
-  // 2. 이모지 사용 빈도
-  const emojiMatches = allContent.match(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{27BF}✅🔹💚⚠️📷📌🏥✓☐🦷💪🔬]/gu) || []
-  const emojiDensity = emojiMatches.length / (allContent.length / 1000)
-  if (emojiDensity > 3) {
-    fp.push('이모지 활용: 적극적 (소제목·강조에 이모지 사용)')
-  } else if (emojiDensity < 0.5) {
-    fp.push('이모지 활용: 최소 (텍스트 중심의 담백한 스타일)')
-  } else {
-    fp.push('이모지 활용: 보통 (포인트에만 가끔 사용)')
-  }
-
-  // 3. 문단 길이 선호
-  const paragraphs = allContent.split(/\n\s*\n/).filter(p => p.trim().length > 30)
-  if (paragraphs.length > 0) {
-    const avgPLen = paragraphs.reduce((s, p) => s + p.trim().length, 0) / paragraphs.length
-    if (avgPLen < 100) {
-      fp.push('문단 스타일: 짧고 간결 (1~2문장씩 끊어서)')
-    } else if (avgPLen > 250) {
-      fp.push('문단 스타일: 상세하고 긴 문단 (5문장 이상)')
-    } else {
-      fp.push('문단 스타일: 중간 길이 (3~4문장)')
-    }
-  }
-
-  // 4. 설명 방식
-  const metaphorCount = (allContent.match(/마치|비유|처럼|같은\s*(것|느낌|원리)|쉽게\s*(말|설명|비유)/g) || []).length
-  const statsCount = (allContent.match(/\d+%|\d+명|\d+만|통계|연구|보고/g) || []).length
-  const clinicalCount = (allContent.match(/관찰|소견|진단|확인됩니다|시사|의미합니다/g) || []).length
-
-  if (metaphorCount > 5) fp.push('설명 방식: 비유를 자주 사용 ("마치 ~처럼")')
-  if (statsCount > 3) fp.push('설명 방식: 수치/통계 근거 제시')
-  if (clinicalCount > 10) fp.push('설명 방식: 임상 소견 기반 서술 ("~가 관찰됩니다")')
-
-  // 5. 소제목 스타일
-  const headings = allContent.match(/^#{1,3}\s+.+$/gm) || []
-  if (headings.length > 0) {
-    const emojiHeadings = headings.filter(h => /[\u{1F300}-\u{1F9FF}\u{2600}-\u{27BF}✅🔹💚⚠️📌🦷]/u.test(h))
-    const numberedHeadings = headings.filter(h => /^\s*#{1,3}\s+\d+[.)]\s/.test(h))
-    if (emojiHeadings.length > headings.length * 0.5) {
-      fp.push('소제목: 이모지 + 키워드 스타일')
-    } else if (numberedHeadings.length > headings.length * 0.3) {
-      fp.push('소제목: 번호 + 키워드 스타일')
-    } else {
-      fp.push('소제목: 텍스트 키워드 스타일')
-    }
-  }
-
-  // 6. 독자 참여도 (질문 빈도)
-  const questionMarks = (allContent.match(/\?/g) || []).length
-  const totalSentences = allContent.split(/[.!?]/).filter(s => s.trim().length > 5).length
-  if (totalSentences > 0 && questionMarks / totalSentences > 0.08) {
-    fp.push('독자 소통: 질문을 자주 던지는 참여 유도형')
-  } else {
-    fp.push('독자 소통: 정보 전달 위주의 설명형')
-  }
-
-  // 7. 인사→본론 전환 패턴
-  const transitionPatterns = intros.map(intro => {
-    if (/오늘은|이번에는|이번 글/.test(intro)) return '주제 예고형 ("오늘은 ~에 대해")'
-    if (/혹시|적\s?있/.test(intro)) return '경험 질문형 ("혹시 ~해 보신 적")'
-    if (/많이|자주|흔히/.test(intro)) return '보편화형 ("~하시는 분들이 많습니다")'
-    return null
-  }).filter(Boolean)
-  if (transitionPatterns.length > 0) {
-    // 가장 빈번한 전환 패턴 선택
-    const counts: Record<string, number> = {}
-    for (const p of transitionPatterns) { counts[p!] = (counts[p!] || 0) + 1 }
-    const topTransition = Object.entries(counts).sort((a, b) => b[1] - a[1])[0]
-    if (topTransition) fp.push(`본론 전환: ${topTransition[0]}`)
-  }
-
-  return fp
-}
-
 // 치과별 자주 쓰는 치료 키워드 추출
 function extractFrequentKeywords(content: string): string[] {
   const keywordPatterns: Record<string, RegExp> = {
@@ -743,15 +556,6 @@ export async function extractClinicPersona(
     return null
   }
 
-  // 주제 매칭 품질 판정
-  const highScorePosts = posts.filter(p => p.score >= 0.8).length
-  const medScorePosts = posts.filter(p => p.score >= 0.7).length
-  let topicMatchQuality: 'high' | 'medium' | 'low' | 'none'
-  if (highScorePosts >= 3) topicMatchQuality = 'high'
-  else if (medScorePosts >= 1) topicMatchQuality = 'medium'
-  else topicMatchQuality = 'low'
-  console.log(`[Persona] topicMatchQuality: ${topicMatchQuality} (high≥0.8: ${highScorePosts}개, med≥0.7: ${medScorePosts}개)`)
-
   // 모든 글 내용 합치기 (분석용) - 전체 글 참조
   const allContent = posts.map(p => p.content).join('\n\n')
 
@@ -774,10 +578,6 @@ export async function extractClinicPersona(
 
   // 치료 특화 키워드 추출 (수면마취, 골이식 등 자주 쓰는 키워드)
   const frequentKeywords = extractFrequentKeywords(allContent)
-
-  // 스타일 핑거프린트 추출 (P3: 거래처별 차별화)
-  const styleFingerprint = extractStyleFingerprint(allContent, sampleIntros)
-  console.log(`[Persona] ${clinicName} 스타일 DNA: ${styleFingerprint.join(' | ')}`)
 
   // 샘플 콘텐츠 확대 - 여러 글의 핵심 부분 수집
   let sampleContent = ''
@@ -814,8 +614,6 @@ export async function extractClinicPersona(
     sampleContent: sampleContent.slice(0, 6000), // 최대 6000자까지 샘플 확대
     avgLength,
     postCount: posts.length,
-    topicMatchQuality,
-    styleFingerprint,
   }
 }
 
@@ -850,27 +648,12 @@ export function generatePersonaPrompt(persona: ClinicPersona): string {
   const cleanedSampleContent = sanitizeEndings(persona.sampleContent)
   const cleanedSampleIntros = persona.sampleIntros.map(intro => sanitizeEndings(intro))
 
-  // 스타일 DNA 요약
-  const styleDNA = persona.styleFingerprint.length > 0
-    ? persona.styleFingerprint.map(f => `• ${f}`).join('\n')
-    : '• 분석 데이터 부족'
-
   return `
 ## 🎭 ${persona.clinicName} 글쓰기 스타일 참조
 
 **분석된 기존 글**: ${persona.postCount}개
 **평균 글 길이**: ${persona.avgLength}자
 **평균 문단 길이**: ${avgParagraphLength}자
-
----
-
-### 🧬 이 치과만의 스타일 DNA (반드시 반영!)
-아래는 ${persona.clinicName}의 기존 글을 분석하여 추출한 **고유 스타일**입니다.
-다른 치과와 차별화되는 핵심 특성이므로, 새 글에서 반드시 반영하세요!
-
-${styleDNA}
-
-→ 위 스타일 DNA를 서문~결론 전체에 일관되게 적용하세요!
 
 ---
 
@@ -894,9 +677,8 @@ ${persona.writingStyle.closings.length > 0
   ? persona.writingStyle.closings.slice(0, 3).map((c, i) => `${i + 1}. "${c}"`).join('\n')
   : '1. "[치과명] [원장님]이었습니다. 감사합니다."'}
 
-### 5. 서문 샘플 (⚠️ 구조/흐름/도입 방식을 그대로 모방!)
-🚨 아래 서문의 **도입 방식, 문장 순서, 공감 표현, 주제 전환 흐름**을 그대로 따라하세요!
-(어미만 글쓰기 모드 규칙 적용)
+### 5. 서문 샘플 (⚠️ 구조/흐름을 반드시 참고! 어미만 글쓰기 모드 따를 것)
+⚠️ 아래 서문의 **구조, 문장 길이, 도입 방식, 공감 표현 순서**를 최대한 유사하게 작성하세요!
 ${cleanedSampleIntros.slice(0, 3).map((intro, i) => `
 **서문 샘플 ${i + 1}:**
 \`\`\`

@@ -686,11 +686,11 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
               value={formData.patientInfo}
               onChange={handleChange}
               required
-              rows={8}
-              placeholder={"예:\n#36 치근단 병소 관찰\n저작 시 통증 호소\n골이식 후 임플란트 식립 예정\n\n💡 상세할수록 글 퀄리티가 올라갑니다!\n- 치식번호, 부위, 증상\n- 치료 단계/방법\n- 강조 포인트"}
+              rows={4}
+              placeholder={"예:\n#36 치근단 병소 관찰\n저작 시 통증 호소\n골이식 후 임플란트 식립 예정"}
               className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 resize-y"
             />
-            <p className="mt-1 text-xs text-gray-500">CC(주소), 임상 소견, 치료 계획 등을 상세히 입력하세요 — 내용이 많을수록 글 퀄리티 ↑</p>
+            <p className="mt-1 text-xs text-gray-500">CC(주소), 임상 소견, 치료 계획 등을 상세히 입력하세요</p>
           </div>
 
           <div>
