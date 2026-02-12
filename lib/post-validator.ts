@@ -173,8 +173,8 @@ function checkKeywordFrequency(
   // 형태소A (region) 카운트: 목표 7, 5~9 OK
   if (region) {
     const regionCount = (cleanContent.match(new RegExp(escapeRegex(region), 'g')) || []).length
-    if (regionCount > 9) {
-      issues.push(`"${region}" ${regionCount}회 (형태소A 목표 7, 최대 9 초과)`)
+    if (regionCount > 8) {
+      issues.push(`"${region}" ${regionCount}회 (형태소A 목표 7, 최대 8 초과)`)
     } else if (regionCount < 5) {
       issues.push(`"${region}" ${regionCount}회 (형태소A 목표 7, 최소 5 미달)`)
     } else {
@@ -201,12 +201,12 @@ function checkKeywordFrequency(
     }
   }
 
-  // topic이 morphemeB와 다른 경우 = 서브키워드 (max 6)
+  // topic이 morphemeB와 다른 경우 = 서브키워드 (max 5)
   if (topic && topic !== morphemeB) {
     const escaped = escapeRegex(topic)
     const topicCount = (cleanContent.match(new RegExp(escaped, 'g')) || []).length
-    if (topicCount > 6) {
-      issues.push(`"${topic}" ${topicCount}회 (서브키워드 최대 6 초과)`)
+    if (topicCount > 5) {
+      issues.push(`"${topic}" ${topicCount}회 (서브키워드 최대 5 초과)`)
     } else {
       info.push(`"${topic}" ${topicCount}회 (서브키워드)`)
     }
@@ -269,6 +269,8 @@ function checkMedicalLaw(content: string): ValidationCheck {
     [/이\s*환자분/, '환자 직접 언급'],
     [/해당\s*환자/, '환자 직접 언급'],
     [/환자분께서/, '환자 직접 언급'],
+    [/환자분의/, '환자 직접 언급'],
+    [/환자\s*입장/, '환자 직접 언급'],
     [/치료받으신\s*분/, '환자 직접 언급'],
     [/내원하신\s*분/, '환자 직접 언급'],
     [/\d{2,3}대\s*(여성|남성|남자|여자)/, '연령/성별 언급'],
@@ -291,6 +293,23 @@ function checkMedicalLaw(content: string): ValidationCheck {
   const clinicEffect = content.match(/저희\s*치과에서[는]?\s*.{0,20}(?:해결|치료해|개선|드리고)/)
   if (clinicEffect) {
     violations.push(`[치과+효과 연결] "${clinicEffect[0].substring(0, 40)}"`)
+  }
+
+  // 지역 + 치료효과 연결 패턴
+  const regionEffect = content.match(/[가-힣]+구에서는?\s*.{0,20}(?:가능합니다|해결|개선|치료)/)
+  if (regionEffect) {
+    violations.push(`[지역+효과 연결] "${regionEffect[0].substring(0, 40)}"`)
+  }
+
+  // 효과 보장/추천 표현
+  const recommendPatterns: [RegExp, string][] = [
+    [/현명한\s*선택/, '효과 보장/추천'],
+  ]
+  for (const [pattern, category] of recommendPatterns) {
+    const match = content.match(pattern)
+    if (match) {
+      violations.push(`[${category}] "${match[0]}"`)
+    }
   }
 
   const passed = violations.length === 0
@@ -413,8 +432,8 @@ function checkSynonymRotation(content: string, mainKeyword?: string, region?: st
     }
 
     // 전체 글에서 7회 이상이면 경고
-    if (totalCount >= 7) {
-      issues.push(`"${word}" 전체 ${totalCount}회 (동의어 교체 권장)`)
+    if (totalCount >= 6) {
+      issues.push(`"${word}" 전체 ${totalCount}회 (동의어 교체 필수! 최대 5회 이하 권장)`)
     }
   }
 

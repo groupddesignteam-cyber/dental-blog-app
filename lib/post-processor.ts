@@ -74,17 +74,37 @@ const FORBIDDEN_REPLACEMENTS: Record<string, string> = {
   '과함': '지나침',
 }
 
-/** 금칙어를 안전한 대체어로 치환 (독립 단어 기준) */
+/** 금칙어를 안전한 대체어로 치환 (독립 단어 기준, 한글 조사 보정 포함) */
 export function sanitizeForbiddenWords(content: string): string {
   let result = content
 
+  // 앞쪽 경계: 공백/문장부호/시작
+  const BOUNDARY_BEFORE = `(^|[\\s,.\\'"\u201C\u201D\u00B7(])`
+
   for (const [word, replacement] of Object.entries(FORBIDDEN_REPLACEMENTS)) {
-    // 독립 단어 매칭 (앞: 공백/문장부호/시작, 뒤: 공백/문장부호/끝)
-    const regex = new RegExp(
-      `(^|[\\s,.\\'"\u201C\u201D\u00B7(])${escapeRegex(word)}(?=[\\s,.\\'"\u201C\u201D\u00B7)!?\\n]|$)`,
+    // replacement가 word를 포함하면 무한 교체 방지 (예: 불편→불편감)
+    let negLookahead = ''
+    if (replacement.startsWith(word) && replacement.length > word.length) {
+      const suffix = replacement.slice(word.length)
+      negLookahead = `(?!${escapeRegex(suffix)})`
+    }
+
+    // 1단계: 단어 + 조사 → 조사 보정 포함 치환
+    const withParticle = new RegExp(
+      `${BOUNDARY_BEFORE}${escapeRegex(word)}${negLookahead}(에서|으로|라고|라는|이나|에는|에도|까지|부터|에|의|이|가|을|를|은|는|로|와|과|도|란|라)(?=[\\s,.\\'"\u201C\u201D\u00B7)!?\\n\uAC00-\uD7A3]|$)`,
       'gm'
     )
-    result = result.replace(regex, `$1${replacement}`)
+    result = result.replace(withParticle, (_match, prefix, particle) => {
+      const adjusted = adjustParticle(replacement, particle)
+      return prefix + replacement + adjusted
+    })
+
+    // 2단계: 단어 단독 (뒤: 공백/구두점/한글/끝)
+    const alone = new RegExp(
+      `${BOUNDARY_BEFORE}${escapeRegex(word)}${negLookahead}(?=[\\s,.\\'"\u201C\u201D\u00B7)!?\\n\uAC00-\uD7A3]|$)`,
+      'gm'
+    )
+    result = result.replace(alone, `$1${replacement}`)
   }
 
   return result
@@ -104,6 +124,30 @@ const MEDICAL_REPLACEMENTS: [RegExp, string][] = [
   [/이빨/g, '치아'],
   [/때우기/g, '수복 치료'],
   [/씌우기/g, '보철 치료'],
+  // 환자 직접 언급 → 일반화 표현으로 치환
+  [/환자분의\s*구강/g, '개인별 구강'],
+  [/환자분께서/g, '이런 경우'],
+  [/환자\s*입장에서/g, '시술을 받으시는 분 입장에서'],
+  [/환자분이/g, '해당되시는 분이'],
+  // 효과 보장/추천 표현
+  [/현명한\s*선택/g, '적합한 방법'],
+  // 비표준 용어 치환
+  [/크라운/g, '보철'],
+  [/도금속/g, '도재-금속'],
+  [/심는다/g, '식립한다'],
+  [/심을\s*수/g, '식립할 수'],
+  [/심어/g, '식립하여'],
+  // 전문 용어 정규화 (실무자 피드백)
+  [/픽스쳐/g, '픽스처'],
+  [/임플란트\s*식립/g, '픽스처 식립'],
+  [/주변\s*치아/g, '인접치'],
+  [/옆\s*치아/g, '인접치'],
+  [/반대편\s*치아/g, '대합치'],
+  [/치아\s*사이/g, '치간'],
+  // "지나치게 염려" 계열 문구 자동 제거
+  [/지나치게\s*염려하지\s*않으셔도\s*됩니다\.?\s*/g, ''],
+  [/지나치게\s*염려하지\s*않으셔도\s*괜찮습니다\.?\s*/g, ''],
+  [/지나치게\s*걱정하지\s*않으셔도\s*됩니다\.?\s*/g, ''],
 ]
 
 /** 의료법 위반 가능 표현을 안전한 표현으로 자동 치환 */
@@ -255,11 +299,11 @@ export function enforceMorphemeLimit(
   // morphemeB 추출: mainKeyword에서 region 제거
   const morphemeB = mainKeyword.replace(region, '').trim() || '치과'
 
-  // 형태소B 빈도 제한 (8회 초과 시 동의어 교체)
+  // 형태소B 빈도 제한 (7회 초과 시 동의어 교체)
   if (morphemeB) {
     const synonymsB = SYNONYM_DICTIONARY[morphemeB]
     if (synonymsB && synonymsB.length > 0) {
-      result = reduceWordCount(result, morphemeB, 8, synonymsB)
+      result = reduceWordCount(result, morphemeB, 7, synonymsB)
     }
   }
 
@@ -350,6 +394,187 @@ export function rotateSynonyms(content: string, morphemeB?: string): string {
 }
 
 // ============================================================
+// 5. 형태소 최소 빈도 보장 (부족 시 본론에 자동 삽입)
+// ============================================================
+
+/** 본문에서 형태소 순수 출현 횟수 (해시태그·치과명 내부 제외) */
+function countMorphemeNet(text: string, morpheme: string, clinicName?: string): number {
+  const clean = text.replace(/#[^\s#]+/g, '')
+  let count = (clean.match(new RegExp(escapeRegex(morpheme), 'g')) || []).length
+  if (clinicName && clinicName.includes(morpheme) && clinicName !== morpheme) {
+    count -= (clean.match(new RegExp(escapeRegex(clinicName), 'g')) || []).length
+  }
+  return Math.max(0, count)
+}
+
+/** Phase 1용 문구 치환 패턴 */
+function getInjectionPatterns(morpheme: string, isRegion: boolean): [RegExp, string][] {
+  if (isRegion) {
+    return [
+      [/이러한 경우/, `${morpheme}에서 이러한 경우`],
+      [/이런 경우/, `${morpheme}에서 이런 경우`],
+      [/이러한 증상/, `${morpheme}에서도 이러한 증상`],
+      [/이런 증상/, `${morpheme}에서도 이런 증상`],
+      [/내원하시는 분/, `${morpheme}에 내원하시는 분`],
+      [/정기 검진/, `${morpheme}에서 정기 검진`],
+      [/정기적인 검진/, `${morpheme}에서 정기적인 검진`],
+      [/정밀 검사/, `${morpheme}에서 정밀 검사`],
+    ]
+  }
+  // morphemeB (치과 or 진료명)
+  const particle = adjustParticle(morpheme, '를')
+  return [
+    [/정밀 진단/, `${morpheme}에서 정밀 진단`],
+    [/정확한 진단/, `${morpheme}에서 정확한 진단`],
+    [/정기적인 검진/, `${morpheme}에서 정기적인 검진`],
+    [/전문적인 관리/, `${morpheme}에서 전문적인 관리`],
+    [/적절한 치료/, `${morpheme}${particle} 통한 적절한 치료`],
+    [/조기 발견/, `${morpheme}에서의 조기 발견`],
+    [/전문의 상담/, `${morpheme} 전문의 상담`],
+    [/치료 계획/, `${morpheme} 치료 계획`],
+  ]
+}
+
+/** Phase 2용 브릿지 문장 */
+function getBridgeSentences(morpheme: string, isRegion: boolean): string[] {
+  if (isRegion) {
+    return [
+      `${morpheme}에서도 이와 유사한 사례가 적지 않습니다.`,
+      `${morpheme} 지역에서도 이에 대한 관심이 높아지고 있습니다.`,
+      `${morpheme}에서도 이러한 증상으로 내원하시는 분들이 많습니다.`,
+      `${morpheme} 지역에서 정기적인 관리가 권장됩니다.`,
+      `${morpheme}에서도 유사한 증례가 보고되고 있습니다.`,
+    ]
+  }
+  return [
+    `${morpheme}에서의 정확한 평가가 중요합니다.`,
+    `${morpheme} 방문 시 이 부분을 확인하시는 것이 좋습니다.`,
+    `${morpheme}에서 정기적으로 점검받으시길 권장합니다.`,
+    `가까운 ${morpheme}에서 전문의 상담을 받아보시는 것이 바람직합니다.`,
+    `${morpheme}에서 정밀 검사를 통해 확인하실 수 있습니다.`,
+  ]
+}
+
+/**
+ * 형태소 최소 빈도 보장
+ * Phase 1: 본론의 기존 문구에 형태소를 자연스럽게 결합
+ * Phase 2: 부족분은 문장 사이에 브릿지 문장 삽입
+ */
+export function enforceMorphemeMinimum(
+  content: string,
+  options: PostProcessOptions
+): string {
+  const { region, mainKeyword, clinicName } = options
+  if (!region || !mainKeyword) return content
+
+  const morphemeB = mainKeyword.replace(region, '').trim() || '치과'
+  const MIN_COUNT = 7
+
+  let result = content
+
+  // 형태소A (region) 보강
+  const regionDef = MIN_COUNT - countMorphemeNet(result, region, clinicName)
+  if (regionDef > 0) {
+    result = injectInBody(result, region, regionDef, clinicName, true)
+  }
+
+  // 형태소B 보강
+  const morphBDef = MIN_COUNT - countMorphemeNet(result, morphemeB, clinicName)
+  if (morphBDef > 0) {
+    result = injectInBody(result, morphemeB, morphBDef, clinicName, false)
+  }
+
+  return result
+}
+
+function injectInBody(
+  content: string,
+  morpheme: string,
+  deficit: number,
+  clinicName: string | undefined,
+  isRegion: boolean
+): string {
+  // ## 섹션 기반으로 분할
+  const sections = content.split(/^(##\s.*$)/m)
+
+  // ## 헤더 인덱스 수집
+  const headerIdxs: number[] = []
+  for (let i = 0; i < sections.length; i++) {
+    if (/^##\s/.test(sections[i])) headerIdxs.push(i)
+  }
+  if (headerIdxs.length < 2) return content
+
+  // 본론 콘텐츠 인덱스 = 첫 ## 다음 ~ 마지막 ## 직전
+  const bodyContentIdxs: number[] = []
+  for (let h = 0; h < headerIdxs.length - 1; h++) {
+    const ci = headerIdxs[h] + 1
+    if (ci < sections.length) bodyContentIdxs.push(ci)
+  }
+
+  let remaining = deficit
+  const patterns = getInjectionPatterns(morpheme, isRegion)
+
+  // Phase 1: 문구 치환
+  for (const ci of bodyContentIdxs) {
+    if (remaining <= 0) break
+    if (sections[ci].includes(morpheme)) continue
+
+    for (const [find, replace] of patterns) {
+      if (remaining <= 0) break
+      if (find.test(sections[ci])) {
+        sections[ci] = sections[ci].replace(find, replace)
+        remaining--
+        break
+      }
+    }
+  }
+
+  // Phase 2: 브릿지 문장 반복 삽입 (morpheme 없는 섹션 우선 → 있는 섹션도 순환)
+  if (remaining > 0) {
+    const bridges = getBridgeSentences(morpheme, isRegion)
+    let bridgeIdx = 0
+    const MAX_ROUNDS = 3 // 한 섹션당 최대 삽입 횟수 (중복 문장 다 쓰면 종료)
+
+    for (let round = 0; round < MAX_ROUNDS && remaining > 0; round++) {
+      let injectedThisRound = 0
+
+      for (const ci of bodyContentIdxs) {
+        if (remaining <= 0) break
+
+        // round 0: morpheme 없는 섹션만, round 1+: 모든 섹션
+        if (round === 0 && sections[ci].includes(morpheme)) continue
+
+        // 중복 방지: 이 섹션에 아직 없는 브릿지 문장 찾기
+        let bridge = ''
+        for (let attempt = 0; attempt < bridges.length; attempt++) {
+          const candidate = bridges[(bridgeIdx + attempt) % bridges.length]
+          if (!sections[ci].includes(candidate)) {
+            bridge = candidate
+            bridgeIdx = (bridgeIdx + attempt + 1)
+            break
+          }
+        }
+        if (!bridge) continue // 이 섹션에 모든 브릿지가 이미 존재
+
+        // n번째 마침표 뒤에 삽입 (라운드마다 다른 위치)
+        const dots = [...sections[ci].matchAll(/\.\s/g)]
+        const targetDot = dots.length > round ? dots[round] : dots[dots.length - 1]
+        if (targetDot && targetDot.index !== undefined) {
+          const pos = targetDot.index + 2
+          sections[ci] = sections[ci].slice(0, pos) + bridge + ' ' + sections[ci].slice(pos)
+          remaining--
+          injectedThisRound++
+        }
+      }
+
+      if (injectedThisRound === 0) break // 더 이상 삽입 불가
+    }
+  }
+
+  return sections.join('')
+}
+
+// ============================================================
 // 메인 후처리 파이프라인
 // ============================================================
 
@@ -382,5 +607,56 @@ export function postProcess(content: string, options: PostProcessOptions): strin
   const morphemeB = options.mainKeyword.replace(options.region, '').trim() || ''
   result = rotateSynonyms(result, morphemeB)
 
+  // Step 5: 형태소 최소 빈도 보장 (부족 시 본론에 자동 삽입)
+  if (options.region && options.mainKeyword) {
+    result = enforceMorphemeMinimum(result, options)
+  }
+
+  // Step 6: 문장 종결 후 줄바꿈 보장 ('~다.' 뒤 다음 문장은 새 줄)
+  result = ensureSentenceLineBreaks(result)
+
   return result
+}
+
+/**
+ * 문장 종결('~다.', '~요.', '~죠.' 등) 뒤에 같은 줄에 텍스트가 이어지면 줄바꿈 삽입.
+ * 마크다운 헤더, 리스트, 해시태그, 이미지, 출처 등은 건너뜀.
+ */
+function ensureSentenceLineBreaks(content: string): string {
+  const lines = content.split('\n')
+  const result: string[] = []
+
+  for (const line of lines) {
+    const trimmed = line.trim()
+
+    // 줄바꿈 대상에서 제외
+    if (
+      trimmed === '' ||
+      trimmed.startsWith('#') ||
+      trimmed.startsWith('---') ||
+      trimmed.startsWith('※') ||
+      trimmed.startsWith('📷') ||
+      trimmed.startsWith('Q.') ||
+      trimmed.startsWith('A.') ||
+      trimmed.startsWith('(출처:') ||
+      trimmed.startsWith('💡') ||
+      trimmed.startsWith('- ') ||
+      trimmed.startsWith('* ') ||
+      /^#[^\s#]/.test(trimmed) ||
+      /^\d+\.\s/.test(trimmed)
+    ) {
+      result.push(line)
+      continue
+    }
+
+    // 문장 종결 패턴 뒤에 같은 줄에서 새 문장이 시작되면 줄바꿈 삽입
+    // 패턴: 한글+종결어미+마침표 + 공백 + 한글/이모지 시작
+    const split = line.replace(
+      /([다요죠까니][\.!\?])\s+(?=[가-힣A-Z✅🔹🔵💚⚠️📷"\(])/g,
+      '$1\n'
+    )
+    result.push(split)
+  }
+
+  return result.join('\n')
 }
