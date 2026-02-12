@@ -10,6 +10,7 @@ export interface SheetData {
   clinics: string[]
   clinicDetails: ClinicDetail[]
   treatments: string[]
+  allClinicTopics: Array<{ clinic: string; topic: string }>
 }
 
 // Google Sheets에서 치과명, 치료 목록 가져오기
@@ -123,7 +124,7 @@ export async function getSheetData(): Promise<SheetData> {
 
   if (!sheetId || !apiKey) {
     console.log('Google Sheets 설정이 없습니다.')
-    return { clinics: [], clinicDetails: [], treatments: [] }
+    return { clinics: [], clinicDetails: [], treatments: [], allClinicTopics: [] }
   }
 
   try {
@@ -171,13 +172,34 @@ export async function getSheetData(): Promise<SheetData> {
 
     const clinicDetails = Array.from(clinicMap.values()).sort((a, b) => a.name.localeCompare(b.name))
 
+    // 모든 치과-주제 쌍 수집 (중복 제거보다는 있는 그대로 수집하거나 필요한 경우 정제)
+    const allClinicTopics: Array<{ clinic: string; topic: string }> = []
+
+    for (const row of rows) {
+      const clinic = row[1]?.trim()
+      const topic = row[2]?.trim()
+      if (clinic && topic) {
+        // 이미 맵에 있는지 확인 (중복 방지 - 같은 치과 같은 주제가 여러 행일 수 있음)
+        if (!allClinicTopics.some(item => item.clinic === clinic && item.topic === topic)) {
+          allClinicTopics.push({ clinic, topic })
+        }
+      }
+    }
+
+    // 가나다순 정렬 (치과명 -> 주제명)
+    allClinicTopics.sort((a, b) => {
+      if (a.clinic !== b.clinic) return a.clinic.localeCompare(b.clinic)
+      return a.topic.localeCompare(b.topic)
+    })
+
     return {
       clinics: clinicDetails.map(c => c.name),
       clinicDetails,
       treatments: Array.from(treatmentsSet).sort(),
+      allClinicTopics,
     }
   } catch (error) {
     console.error('Failed to fetch sheet data:', error)
-    return { clinics: [], clinicDetails: [], treatments: [] }
+    return { clinics: [], clinicDetails: [], treatments: [], allClinicTopics: [] }
   }
 }

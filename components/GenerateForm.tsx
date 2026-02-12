@@ -167,8 +167,9 @@ function KeywordButton({
 export default function GenerateForm({ onSubmit, isLoading }: Props) {
   // 시트 데이터
   const [sheetClinics, setSheetClinics] = useState<string[]>([])
-  const [sheetClinicDetails, setSheetClinicDetails] = useState<Array<{name: string; region: string; doctorName: string}>>([])
+  const [sheetClinicDetails, setSheetClinicDetails] = useState<Array<{ name: string; region: string; doctorName: string }>>([])
   const [sheetTreatments, setSheetTreatments] = useState<string[]>([])
+  const [sheetAllClinicTopics, setSheetAllClinicTopics] = useState<Array<{ clinic: string; topic: string }>>([])
   const [isLoadingSheet, setIsLoadingSheet] = useState(true)
 
   // 치과별 주제 필터
@@ -178,6 +179,8 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
   // 직접 입력 모드
   const [customClinicMode, setCustomClinicMode] = useState(false)
   const [customTopicMode, setCustomTopicMode] = useState(false)
+  const [borrowTopicMode, setBorrowTopicMode] = useState(false) // 다른 치과 주제 불러오기 모드
+  const [borrowSearch, setBorrowSearch] = useState('') // 다른 치과 주제 검색어
 
   // 이미지 업로드
   const [images, setImages] = useState<UploadedImage[]>([])
@@ -211,6 +214,7 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
     photoDescription: '',
     model: 'claude',
     writingMode: 'expert' as WritingMode, // 임상 포스팅 기본
+    sourceClinic: '', // 초기화
   })
 
   // 시트 데이터 가져오기
@@ -227,6 +231,9 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
         }
         if (data.treatments?.length > 0) {
           setSheetTreatments(data.treatments)
+        }
+        if (data.allClinicTopics?.length > 0) {
+          setSheetAllClinicTopics(data.allClinicTopics)
         }
       } catch (error) {
         console.error('Failed to fetch sheet data:', error)
@@ -451,8 +458,8 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
             <label
               key={model.id}
               className={`relative flex flex-col p-5 cursor-pointer rounded-xl border-2 transition-all ${formData.model === model.id
-                  ? 'border-primary-500 bg-primary-50 shadow-md'
-                  : 'border-gray-200 hover:border-gray-300 hover:shadow-sm'
+                ? 'border-primary-500 bg-primary-50 shadow-md'
+                : 'border-gray-200 hover:border-gray-300 hover:shadow-sm'
                 }`}
             >
               <input
@@ -481,8 +488,8 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
             <label
               key={mode.id || 'default'}
               className={`relative flex flex-col p-4 cursor-pointer rounded-xl border-2 transition-all ${formData.writingMode === mode.id
-                  ? 'border-primary-500 bg-primary-50'
-                  : 'border-gray-200 hover:border-gray-300'
+                ? 'border-primary-500 bg-primary-50'
+                : 'border-gray-200 hover:border-gray-300'
                 }`}
             >
               <input
@@ -627,11 +634,10 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
                       key={topic}
                       type="button"
                       onClick={() => setFormData((prev) => ({ ...prev, topic }))}
-                      className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all border ${
-                        formData.topic === topic
-                          ? 'bg-primary-500 text-white border-primary-500'
-                          : 'bg-white text-gray-700 border-gray-300 hover:border-primary-400 hover:text-primary-600'
-                      }`}
+                      className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all border ${formData.topic === topic
+                        ? 'bg-primary-500 text-white border-primary-500'
+                        : 'bg-white text-gray-700 border-gray-300 hover:border-primary-400 hover:text-primary-600'
+                        }`}
                     >
                       {topic}
                       {formData.topic === topic && ' \u2713'}
@@ -646,7 +652,7 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
                 <SearchableSelect
                   options={treatmentOptions}
                   value={formData.topic}
-                  onChange={(value) => setFormData((prev) => ({ ...prev, topic: value }))}
+                  onChange={(value) => setFormData((prev) => ({ ...prev, topic: value, sourceClinic: '' }))}
                   placeholder={clinicTopics.length > 0 ? "위 버튼으로 선택하거나 검색..." : "주제/치료 검색 또는 선택..."}
                   required
                   onCustomInput={() => setCustomTopicMode(true)}
@@ -674,6 +680,95 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
                   ← 목록에서 선택
                 </button>
               </>
+            )}
+
+            {/* 다른 치과 주제 불러오기 */}
+            {!customTopicMode && (
+              <div className="mt-3">
+                <button
+                  type="button"
+                  onClick={() => setBorrowTopicMode(!borrowTopicMode)}
+                  className="text-sm text-primary-600 font-medium hover:text-primary-800 flex items-center gap-1"
+                >
+                  {borrowTopicMode ? '[-] 다른 치과 주제 닫기' : '[+] 다른 치과 주제 불러오기 (다른 병원 글 참고)'}
+                </button>
+
+                {borrowTopicMode && (
+                  <div className="mt-2 p-4 bg-gray-50 rounded-xl border border-gray-200">
+                    <p className="text-xs text-gray-500 mb-3">
+                      다른 치과의 글 주제를 빌려옵니다. <br />
+                      <span className="font-bold text-primary-600">내용 구조(RAG)</span>는 해당 치과 글을 참고하지만,
+                      <span className="font-bold text-primary-600"> 말투와 병원 정보</span>는 [내 병원] 기준으로 작성됩니다.
+                    </p>
+
+                    <div className="mb-2">
+                      <input
+                        type="text"
+                        value={borrowSearch}
+                        placeholder="주제 또는 병원명 검색..."
+                        className="w-full text-xs px-2 py-1 border rounded mb-2 font-normal"
+                        onChange={(e) => setBorrowSearch(e.target.value)}
+                        autoFocus
+                      />
+                    </div>
+
+                    <div className="max-h-60 overflow-y-auto space-y-1">
+                      {sheetAllClinicTopics
+                        .filter(item =>
+                          !borrowSearch ||
+                          item.topic.toLowerCase().includes(borrowSearch.toLowerCase()) ||
+                          item.clinic.toLowerCase().includes(borrowSearch.toLowerCase())
+                        )
+                        .length > 0 ? (
+                        sheetAllClinicTopics
+                          .filter(item =>
+                            !borrowSearch ||
+                            item.topic.toLowerCase().includes(borrowSearch.toLowerCase()) ||
+                            item.clinic.toLowerCase().includes(borrowSearch.toLowerCase())
+                          )
+                          .map((item, idx) => (
+                            <button
+                              key={`${item.clinic}-${item.topic}-${idx}`}
+                              type="button"
+                              onClick={() => {
+                                setFormData(prev => ({
+                                  ...prev,
+                                  topic: item.topic,
+                                  sourceClinic: item.clinic,
+                                }))
+                                setBorrowTopicMode(false)
+                                setBorrowSearch('')
+                              }}
+                              className="w-full text-left px-3 py-2 text-sm bg-white hover:bg-primary-50 rounded-lg border border-gray-100 hover:border-primary-200 transition-colors flex justify-between items-center group"
+                            >
+                              <span className="font-medium text-gray-700">{item.topic}</span>
+                              <span className="text-xs text-gray-400 group-hover:text-primary-600">
+                                {item.clinic}
+                              </span>
+                            </button>
+                          ))
+                      ) : (
+                        <p className="text-sm text-gray-400 p-2">검색 결과가 없습니다.</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 선택된 소스 치과 표시 */}
+            {formData.sourceClinic && (
+              <div className="mt-2 text-xs text-blue-600 bg-blue-50 px-3 py-2 rounded-lg border border-blue-100 flex items-center justify-between">
+                <span>🔄 <b>{formData.sourceClinic}</b>의 주제를 참조하여 작성합니다.</span>
+                <button
+                  type="button"
+                  onClick={() => setFormData(prev => ({ ...prev, sourceClinic: '' }))}
+                  className="text-blue-400 hover:text-red-500 font-bold px-2"
+                  title="참조 취소"
+                >
+                  ✕
+                </button>
+              </div>
             )}
           </div>
 
@@ -808,11 +903,10 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold text-gray-900">🎯 SEO 키워드 추천</h3>
             {keywordState.seoScore && (
-              <span className={`px-3 py-1 rounded-full text-sm font-bold ${
-                keywordState.seoScore >= 80 ? 'bg-green-500 text-white' :
+              <span className={`px-3 py-1 rounded-full text-sm font-bold ${keywordState.seoScore >= 80 ? 'bg-green-500 text-white' :
                 keywordState.seoScore >= 60 ? 'bg-yellow-500 text-white' :
-                'bg-red-500 text-white'
-              }`}>
+                  'bg-red-500 text-white'
+                }`}>
                 SEO 점수: {keywordState.seoScore}점
               </span>
             )}

@@ -64,6 +64,8 @@ export interface GenerateFormData {
   diversityHints?: BatchDiversityHints
   // 메인키워드 (사용자 직접 입력, 예: "부평 임플란트", "부평 더굿모닝치과")
   mainKeyword?: string
+  // 타 치과 주제 차용 시 원본 치과명 (RAG 참조용)
+  sourceClinic?: string
 }
 
 // 키워드 분석 결과 타입 (클라이언트용)

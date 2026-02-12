@@ -1260,7 +1260,8 @@ export async function POST(request: NextRequest) {
     // 🚀 최적화: 비동기 API 호출 병렬 처리 (기존 순차 3-4초 → 병렬 1-2초)
     // ============================================================
     const [ragResult, keywordResult, personaResult] = await Promise.allSettled([
-      generateRAGContext(data.topic, data.clinicName || undefined),
+      // RAG 컨텍스트 생성: sourceClinic이 있으면 해당 치과 글 우선 참조, 없으면 clinicName 참조
+      generateRAGContext(data.topic, data.sourceClinic || data.clinicName || undefined),
       analyzeKeywordsComprehensive(data.topic),
       // 치과별 페르소나 추출 (usePersona가 true이거나 기본적으로 항상 시도)
       data.clinicName ? extractClinicPersona(data.clinicName, data.topic) : Promise.resolve(null),
