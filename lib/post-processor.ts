@@ -339,63 +339,102 @@ const WATCH_WORDS = ['치료', '시술', '수술', '진행', '확인', '상태',
  * - 이미 처리된 단어의 동의어는 건너뜀 (연쇄 교체 방지)
  * - morphemeB가 복합어(근관치료 등)이면 해당 단어는 동의어 회전에서 보호
  */
-export function rotateSynonyms(content: string, morphemeB?: string): string {
+/**
+ * 동의어 회전 강제 적용 (전체 단어 대상)
+ * - Region, Clinic, MainKeyword를 제외한 모든 단어는 전체 6회 초과 시 교체
+ * - MainKeyword와 겹치는 구간은 보호
+ */
+export function rotateSynonyms(content: string, options: PostProcessOptions): string {
   let result = content
-  const processedWords = new Set<string>()
+  const { region, mainKeyword, clinicName } = options
 
-  // morphemeB가 복합어(예: 근관치료)이면 그 자체를 보호
-  if (morphemeB && morphemeB.length > 2) {
-    processedWords.add(morphemeB)
+  // 1. 보호 구간 식별 (Main Keyword, Clinic Name)
+  const protectedRanges: [number, number][] = []
+  const inputKeywords = [mainKeyword, clinicName].filter(Boolean) as string[]
+
+  for (const kw of inputKeywords) {
+    const kwRegex = new RegExp(escapeRegex(kw), 'g')
+    for (const match of result.matchAll(kwRegex)) {
+      if (match.index !== undefined) {
+        protectedRanges.push([match.index, match.index + kw.length])
+      }
+    }
   }
 
-  for (const word of WATCH_WORDS) {
-    // 연쇄 교체 방지: 이전 단어의 동의어로 이미 등장한 단어는 건너뜀
-    if (processedWords.has(word)) continue
+  // 겹침 확인 헬퍼
+  const isProtected = (start: number, end: number) => {
+    return protectedRanges.some(([pStart, pEnd]) =>
+      (start < pEnd && end > pStart)
+    )
+  }
 
-    // morphemeB가 이 word를 포함하는 복합어이면 건너뜀
-    // 예: morphemeB="근관치료" → "치료" 카운트에서 "근관치료" 내부 제외됨 (findSafeOccurrences에서 처리)
-    const synonyms = SYNONYM_DICTIONARY[word]
+  // 2. 예외 단어 설정
+  const exceptions = new Set([
+    region,
+    clinicName,
+    '치과', // 명시적 제외
+    '원장', // 필요 시 추가
+    ...inputKeywords
+  ].filter(Boolean))
+
+  // 3. 사전 순회 및 교체
+  for (const [word, synonyms] of Object.entries(SYNONYM_DICTIONARY)) {
+    if (exceptions.has(word)) continue
     if (!synonyms || synonyms.length === 0) continue
 
-    const safeSynonyms = synonyms.filter(s => !s.includes(' '))
-    if (safeSynonyms.length === 0) continue
+    const regex = new RegExp(escapeRegex(word), 'g')
+    // 현재 결과에서 매치 찾기
+    const allMatches = [...result.matchAll(regex)]
 
-    // 이 단어의 동의어를 "처리됨"으로 마크 (이후 루프에서 건너뜀)
-    for (const syn of safeSynonyms) {
-      processedWords.add(syn)
+    // 보호 구간과 겹치지 않는 유효 매치 필터링
+    const validMatches = allMatches.filter(m =>
+      m.index !== undefined && !isProtected(m.index, m.index + word.length)
+    )
+
+    // 6회 초과 시 교체
+    if (validMatches.length > 6) {
+      // 7번째(인덱스 6)부터 교체 대상
+      const matchesToReplace = validMatches.slice(6)
+      const safeSynonyms = synonyms.filter(s => !s.includes(' ')) // 공백 없는 단어 우선
+
+      if (safeSynonyms.length === 0) continue
+
+      // 뒤에서부터 교체 (인덱스 밀림 방지)
+      // 주의: matchesToReplace는 앞에서부터 정렬되어 있음. 역순 순회 필요.
+      for (let i = matchesToReplace.length - 1; i >= 0; i--) {
+        const match = matchesToReplace[i]
+        if (match.index === undefined) continue
+
+        const synonym = safeSynonyms[i % safeSynonyms.length] // 순환 선택
+
+        const before = result.slice(0, match.index)
+        const after = result.slice(match.index + word.length)
+        result = before + synonym + after
+      }
+
+      // 주의: result가 변경되었으므로 다음 루프의 protectedRanges는 오차 발생 가능?
+      // 아니오, protectedRanges는 Main Keyword 위치임.
+      // 우리가 교체한 것은 Main Keyword가 "아닌" 단어들임.
+      // 단, 교체로 인해 전체 길이 바뀌면 Main Keyword 위치도 바뀜.
+      // 따라서, 정확성을 위해 protectedRanges를 매번 갱신하거나,
+      // **가장 안전한 방법**: 변경된 텍스트에서 다시 검색? 성능 저하.
+      // **절충**: 역순으로 처리했으므로, 이 단어(word)에 대한 처리는 안전함.
+      // 다른 단어(next word) 처리 시 protectedRanges가 안 맞을 수 있음.
+      // 해결책: 텍스트 변경 시 protectedRanges도 시프트? 복잡함.
+      // **실용적 해결책**: 루프마다 protectedRanges 재계산? (단어 50개 * 매치. 좀 무거움)
+      // 하지만 블로그 글은 3000자. 빠름. 재계산하자.
+
+      // 재계산 로직 삽입 (성능보다 정확성)
+      protectedRanges.length = 0
+      for (const kw of inputKeywords) {
+        const kwRegex = new RegExp(escapeRegex(kw), 'g')
+        for (const match of result.matchAll(kwRegex)) {
+          if (match.index !== undefined) {
+            protectedRanges.push([match.index, match.index + kw.length])
+          }
+        }
+      }
     }
-    processedWords.add(word)
-
-    // 전체 빈도 체크 (6회 이하로 — 검증기 임계값 7보다 아래)
-    result = reduceWordCount(result, word, 6, safeSynonyms)
-
-    // 섹션별 체크 (## 기준으로 나누어 섹션당 3회 이하로)
-    const sections = result.split(/^(##\s.*$)/m)
-    let rebuilt = ''
-    for (let s = 0; s < sections.length; s++) {
-      const section = sections[s]
-      // 헤더 라인은 그대로
-      if (/^##\s/.test(section)) {
-        rebuilt += section
-        continue
-      }
-
-      const occurrences = findSafeOccurrences(section, word)
-      if (occurrences.length <= 3) {
-        rebuilt += section
-        continue
-      }
-
-      // 섹션 내 3회 초과분 교체
-      const toReplace = occurrences.slice(3)
-      let sectionResult = section
-      for (let i = toReplace.length - 1; i >= 0; i--) {
-        const synonym = safeSynonyms[i % safeSynonyms.length]
-        sectionResult = replaceAtIndex(sectionResult, toReplace[i], word, synonym)
-      }
-      rebuilt += sectionResult
-    }
-    result = rebuilt
   }
 
   return result
@@ -560,8 +599,8 @@ export function postProcess(content: string, options: PostProcessOptions): strin
   }
 
   // Step 4: 동의어 회전 (고빈도 일반 단어)
-  const morphemeB = options.mainKeyword.replace(options.region, '').trim() || ''
-  result = rotateSynonyms(result, morphemeB)
+  // Step 4: 동의어 회전 (고빈도 일반 단어 - 전체 6회 제한)
+  result = rotateSynonyms(result, options)
 
   // Step 5: 형태소(지역명) 빈도 및 분포 보장 (7회 고정)
   if (options.region) {
