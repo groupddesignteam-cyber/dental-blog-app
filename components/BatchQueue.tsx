@@ -287,6 +287,8 @@ export default function BatchQueue({ onResultsReady }: Props) {
   const [borrowTopicMode, setBorrowTopicMode] = useState(false)
   const [borrowSearch, setBorrowSearch] = useState('')
   const [selectedSourceClinic, setSelectedSourceClinic] = useState('')
+  // 다중 선택 상태: Key="Clinic:Topic", Value={clinic, topic}
+  const [borrowSelection, setBorrowSelection] = useState<Map<string, { clinic: string; topic: string }>>(new Map())
 
   // 임상 이미지 (단일 배열)
   const [images, setImages] = useState<UploadedImage[]>([])
@@ -525,6 +527,41 @@ export default function BatchQueue({ onResultsReady }: Props) {
     setMemo('')
     setMainKeyword('')
     setImages([])
+  }
+
+  // 선택된 차용 주제들 일괄 추가
+  const addBorrowedBatch = () => {
+    if (!selectedClinic) {
+      alert('치과를 먼저 선택해주세요.')
+      return
+    }
+
+    if (borrowSelection.size === 0) return
+
+    const newCases: BlogCase[] = []
+    const sortedImages = getSortedImages() // 현재 업로드된 이미지를 모든 케이스에 공통 적용 (원치 않으면 사전에 제거)
+
+    borrowSelection.forEach((startItem) => {
+      const newCase: BlogCase = {
+        id: `case-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+        clinicName: selectedClinic.name,
+        region: selectedClinic.region,
+        doctorName: selectedClinic.doctorName,
+        topic: startItem.topic,
+        sourceClinic: startItem.clinic,
+        memo: memo.trim(),
+        writingMode: postingMode,
+        mainKeyword: mainKeyword.trim() || undefined,
+        images: sortedImages.length > 0 ? [...sortedImages] : undefined, // 복사해서 할당
+        status: 'pending',
+      }
+      newCases.push(newCase)
+    })
+
+    setCases(prev => [...prev, ...newCases])
+    setBorrowSelection(new Map())
+    setBorrowTopicMode(false)
+    alert(`${newCases.length}개의 케이스가 추가되었습니다.`)
   }
 
   // 케이스 삭제
@@ -1145,7 +1182,7 @@ export default function BatchQueue({ onResultsReady }: Props) {
               ) : (
                 <div className="mt-2 p-3 bg-gray-50 rounded-xl border border-gray-200">
                   <div className="flex justify-between items-center mb-2">
-                    <span className="text-xs font-bold text-gray-700">다른 치과 주제 검색</span>
+                    <span className="text-xs font-bold text-gray-700">다른 치과 주제 검색 (다중 선택 가능)</span>
                     <button
                       onClick={() => setBorrowTopicMode(false)}
                       className="text-gray-400 hover:text-gray-600"
@@ -1177,28 +1214,65 @@ export default function BatchQueue({ onResultsReady }: Props) {
                           item.topic.toLowerCase().includes(borrowSearch.toLowerCase()) ||
                           item.clinic.toLowerCase().includes(borrowSearch.toLowerCase())
                         )
-                        .map((item, idx) => (
-                          <button
-                            key={`${item.clinic}-${item.topic}-${idx}`}
-                            type="button"
-                            onClick={() => {
-                              setSelectedTopic(item.topic)
-                              setSelectedSourceClinic(item.clinic)
-                              setBorrowTopicMode(false)
-                              setBorrowSearch('')
-                            }}
-                            className="w-full text-left px-2 py-1.5 text-xs bg-white hover:bg-primary-50 rounded border border-gray-100 hover:border-primary-200 transition-colors flex justify-between items-center group"
-                          >
-                            <span className="font-medium text-gray-700">{item.topic}</span>
-                            <span className="text-gray-400 group-hover:text-primary-600 text-[10px]">
-                              {item.clinic}
-                            </span>
-                          </button>
-                        ))
+                        .map((item, idx) => {
+                          const key = `${item.clinic}:${item.topic}`
+                          const isSelected = borrowSelection.has(key)
+                          return (
+                            <div
+                              key={`${item.clinic}-${item.topic}-${idx}`}
+                              className={`w-full flex items-center gap-2 px-2 py-1.5 text-xs rounded border transition-colors ${isSelected ? 'bg-primary-50 border-primary-200' : 'bg-white border-gray-100 hover:border-primary-200'
+                                }`}
+                            >
+                              {/* 체크박스 (다중 선택) */}
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => {
+                                  const newMap = new Map(borrowSelection)
+                                  if (newMap.has(key)) {
+                                    newMap.delete(key)
+                                  } else {
+                                    newMap.set(key, item)
+                                  }
+                                  setBorrowSelection(newMap)
+                                }}
+                                className="w-4 h-4 text-primary-600 rounded border-gray-300 focus:ring-primary-500 cursor-pointer"
+                              />
+
+                              {/* 텍스트 클릭 시 단일 채우기 (기존 동작) */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedTopic(item.topic)
+                                  setSelectedSourceClinic(item.clinic)
+                                  setBorrowTopicMode(false)
+                                  setBorrowSearch('')
+                                }}
+                                className="flex-1 text-left flex justify-between items-center group"
+                              >
+                                <span className="font-medium text-gray-700">{item.topic}</span>
+                                <span className="text-gray-400 group-hover:text-primary-600 text-[10px]">
+                                  {item.clinic}
+                                </span>
+                              </button>
+                            </div>
+                          )
+                        })
                     ) : (
                       <p className="text-xs text-gray-400 p-1">검색 결과가 없습니다.</p>
                     )}
                   </div>
+
+                  {/* 다중 추가 버튼 */}
+                  {borrowSelection.size > 0 && (
+                    <button
+                      type="button"
+                      onClick={addBorrowedBatch}
+                      className="w-full py-2 bg-primary-600 text-white text-xs font-bold rounded-lg hover:bg-primary-700 transition-colors shadow-sm"
+                    >
+                      선택한 {borrowSelection.size}개 케이스 일괄 추가하기
+                    </button>
+                  )}
                 </div>
               )}
 
