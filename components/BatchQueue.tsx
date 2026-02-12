@@ -12,6 +12,7 @@ interface BlogCase {
   region: string
   doctorName: string
   topic: string
+  sourceClinic?: string // 타 치과 주제 차용 시 원본 치과명
   memo: string
   writingMode: WritingMode
   mainKeyword?: string // 메인키워드 (사용자 직접 입력)
@@ -142,9 +143,8 @@ function SearchableSelect({
                   setSearch('')
                   setIsOpen(false)
                 }}
-                className={`w-full px-3 py-2 text-left hover:bg-primary-50 ${
-                  value === opt ? 'bg-primary-100 text-primary-700' : ''
-                }`}
+                className={`w-full px-3 py-2 text-left hover:bg-primary-50 ${value === opt ? 'bg-primary-100 text-primary-700' : ''
+                  }`}
               >
                 {opt}
               </button>
@@ -190,8 +190,8 @@ function BatchValidationPanel({ caseItem }: { caseItem: BlogCase }) {
   const scoreColor = validation.score >= 80
     ? 'text-green-700 bg-green-100'
     : validation.score >= 50
-    ? 'text-yellow-700 bg-yellow-100'
-    : 'text-red-700 bg-red-100'
+      ? 'text-yellow-700 bg-yellow-100'
+      : 'text-red-700 bg-red-100'
 
   return (
     <div className="mt-8 pt-6 border-t border-gray-200">
@@ -231,8 +231,8 @@ function BatchCheckItem({ check }: { check: ValidationCheck }) {
   const bgColor = check.passed
     ? 'bg-green-50 border-green-200'
     : check.severity === 'error'
-    ? 'bg-red-50 border-red-200'
-    : 'bg-yellow-50 border-yellow-200'
+      ? 'bg-red-50 border-red-200'
+      : 'bg-yellow-50 border-yellow-200'
 
   return (
     <div className={`rounded-lg border p-2.5 ${bgColor}`}>
@@ -281,6 +281,12 @@ export default function BatchQueue({ onResultsReady }: Props) {
   const [selectedTopic, setSelectedTopic] = useState('')
   const [memo, setMemo] = useState('')
   const [mainKeyword, setMainKeyword] = useState('')
+
+  // 타 치과 주제 불러오기 상태
+  const [sheetAllClinicTopics, setSheetAllClinicTopics] = useState<Array<{ clinic: string; topic: string }>>([])
+  const [borrowTopicMode, setBorrowTopicMode] = useState(false)
+  const [borrowSearch, setBorrowSearch] = useState('')
+  const [selectedSourceClinic, setSelectedSourceClinic] = useState('')
 
   // 임상 이미지 (단일 배열)
   const [images, setImages] = useState<UploadedImage[]>([])
@@ -335,6 +341,10 @@ export default function BatchQueue({ onResultsReady }: Props) {
 
         if (data.treatments && data.treatments.length > 0) {
           setSheetTreatments(data.treatments)
+        }
+
+        if (data.allClinicTopics) {
+          setSheetAllClinicTopics(data.allClinicTopics)
         }
       } catch (error) {
         console.error('Failed to load clinic presets:', error)
@@ -485,6 +495,8 @@ export default function BatchQueue({ onResultsReady }: Props) {
       // 커스텀 입력
       setSelectedClinic({ name, region: '', doctorName: '' })
     }
+    // 치과 변경 시 소스 치과 초기화
+    setSelectedSourceClinic('')
   }
 
   // 케이스 추가
@@ -501,6 +513,7 @@ export default function BatchQueue({ onResultsReady }: Props) {
       region: selectedClinic.region,
       doctorName: selectedClinic.doctorName,
       topic: selectedTopic,
+      sourceClinic: selectedSourceClinic || undefined,
       memo: memo.trim(),
       writingMode: postingMode,
       mainKeyword: mainKeyword.trim() || undefined,
@@ -582,7 +595,7 @@ export default function BatchQueue({ onResultsReady }: Props) {
           pool = Array.from({ length: poolSize }, (_, i) => i)
           for (let i = pool.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1))
-            ;[pool[i], pool[j]] = [pool[j], pool[i]]
+              ;[pool[i], pool[j]] = [pool[j], pool[i]]
           }
         }
         result.push(pool.shift()!)
@@ -625,6 +638,7 @@ export default function BatchQueue({ onResultsReady }: Props) {
         region: caseItem.region,
         doctorName: caseItem.doctorName,
         topic: caseItem.topic,
+        sourceClinic: caseItem.sourceClinic,
         patientInfo: caseItem.memo || '일반 환자',
         treatment: caseItem.memo
           ? `${caseItem.topic} - ${caseItem.memo.substring(0, 100)}`
@@ -1058,11 +1072,10 @@ export default function BatchQueue({ onResultsReady }: Props) {
               key={m.id}
               type="button"
               onClick={() => setModel(m.id as LLMModel)}
-              className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${
-                model === m.id
-                  ? 'bg-primary-500 text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
+              className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${model === m.id
+                ? 'bg-primary-500 text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
             >
               {m.name}
             </button>
@@ -1111,10 +1124,99 @@ export default function BatchQueue({ onResultsReady }: Props) {
             <SearchableSelect
               options={allTreatments}
               value={selectedTopic}
-              onChange={setSelectedTopic}
+              onChange={(val) => {
+                setSelectedTopic(val)
+                setSelectedSourceClinic('')
+              }}
               placeholder={clinicTopics.length > 0 ? `${selectedClinic?.name} 주제 검색...` : "치료 검색..."}
               allowCustom
             />
+
+            {/* 다른 치과 주제 불러오기 */}
+            <div className="mt-2">
+              {!borrowTopicMode ? (
+                <button
+                  type="button"
+                  onClick={() => setBorrowTopicMode(true)}
+                  className="text-xs text-primary-600 font-medium hover:text-primary-800 flex items-center gap-1"
+                >
+                  [+] 다른 치과 주제 불러오기 (다른 병원 글 참고)
+                </button>
+              ) : (
+                <div className="mt-2 p-3 bg-gray-50 rounded-xl border border-gray-200">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-xs font-bold text-gray-700">다른 치과 주제 검색</span>
+                    <button
+                      onClick={() => setBorrowTopicMode(false)}
+                      className="text-gray-400 hover:text-gray-600"
+                    >
+                      ✕
+                    </button>
+                  </div>
+
+                  <input
+                    type="text"
+                    value={borrowSearch}
+                    placeholder="주제 또는 병원명 검색..."
+                    className="w-full text-xs px-2 py-1.5 border rounded-lg mb-2 focus:outline-none focus:border-primary-500"
+                    onChange={(e) => setBorrowSearch(e.target.value)}
+                    autoFocus
+                  />
+
+                  <div className="max-h-48 overflow-y-auto space-y-1">
+                    {sheetAllClinicTopics
+                      .filter(item =>
+                        !borrowSearch ||
+                        item.topic.toLowerCase().includes(borrowSearch.toLowerCase()) ||
+                        item.clinic.toLowerCase().includes(borrowSearch.toLowerCase())
+                      )
+                      .length > 0 ? (
+                      sheetAllClinicTopics
+                        .filter(item =>
+                          !borrowSearch ||
+                          item.topic.toLowerCase().includes(borrowSearch.toLowerCase()) ||
+                          item.clinic.toLowerCase().includes(borrowSearch.toLowerCase())
+                        )
+                        .map((item, idx) => (
+                          <button
+                            key={`${item.clinic}-${item.topic}-${idx}`}
+                            type="button"
+                            onClick={() => {
+                              setSelectedTopic(item.topic)
+                              setSelectedSourceClinic(item.clinic)
+                              setBorrowTopicMode(false)
+                              setBorrowSearch('')
+                            }}
+                            className="w-full text-left px-2 py-1.5 text-xs bg-white hover:bg-primary-50 rounded border border-gray-100 hover:border-primary-200 transition-colors flex justify-between items-center group"
+                          >
+                            <span className="font-medium text-gray-700">{item.topic}</span>
+                            <span className="text-gray-400 group-hover:text-primary-600 text-[10px]">
+                              {item.clinic}
+                            </span>
+                          </button>
+                        ))
+                    ) : (
+                      <p className="text-xs text-gray-400 p-1">검색 결과가 없습니다.</p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* 선택된 소스 치과 표시 */}
+              {selectedSourceClinic && (
+                <div className="mt-2 text-xs text-blue-600 bg-blue-50 px-2.5 py-1.5 rounded-lg border border-blue-100 flex items-center justify-between">
+                  <span>🔄 <b>{selectedSourceClinic}</b>의 글을 참조합니다</span>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedSourceClinic('')}
+                    className="text-blue-400 hover:text-red-500 font-bold px-1"
+                    title="참조 취소"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* 메모 */}
@@ -1189,11 +1291,10 @@ export default function BatchQueue({ onResultsReady }: Props) {
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
-            className={`block w-full min-h-[100px] p-4 border-2 border-dashed rounded-xl transition-all cursor-pointer ${
-              isDragging
-                ? 'border-primary-500 bg-primary-50'
-                : 'border-gray-200 hover:border-primary-400 hover:bg-gray-50'
-            }`}
+            className={`block w-full min-h-[100px] p-4 border-2 border-dashed rounded-xl transition-all cursor-pointer ${isDragging
+              ? 'border-primary-500 bg-primary-50'
+              : 'border-gray-200 hover:border-primary-400 hover:bg-gray-50'
+              }`}
           >
             {images.length > 0 ? (
               <div className="flex flex-wrap gap-3">
@@ -1249,13 +1350,12 @@ export default function BatchQueue({ onResultsReady }: Props) {
                 key={mode.id}
                 type="button"
                 onClick={() => setPostingMode(mode.id)}
-                className={`flex-1 py-2 px-3 rounded-xl text-sm font-medium transition-all border ${
-                  postingMode === mode.id
-                    ? mode.id === 'expert'
-                      ? 'border-blue-500 bg-blue-50 text-blue-700'
-                      : 'border-green-500 bg-green-50 text-green-700'
-                    : 'border-gray-200 bg-gray-50 text-gray-600 hover:border-gray-300'
-                }`}
+                className={`flex-1 py-2 px-3 rounded-xl text-sm font-medium transition-all border ${postingMode === mode.id
+                  ? mode.id === 'expert'
+                    ? 'border-blue-500 bg-blue-50 text-blue-700'
+                    : 'border-green-500 bg-green-50 text-green-700'
+                  : 'border-gray-200 bg-gray-50 text-gray-600 hover:border-gray-300'
+                  }`}
               >
                 {mode.id === 'expert' ? '🏥 임상' : '📚 정보성'}
               </button>
@@ -1304,15 +1404,14 @@ export default function BatchQueue({ onResultsReady }: Props) {
             {cases.map((caseItem, index) => (
               <div
                 key={caseItem.id}
-                className={`rounded-xl border transition-all overflow-hidden ${
-                  caseItem.status === 'completed'
-                    ? 'bg-green-50 border-green-200'
-                    : caseItem.status === 'error'
+                className={`rounded-xl border transition-all overflow-hidden ${caseItem.status === 'completed'
+                  ? 'bg-green-50 border-green-200'
+                  : caseItem.status === 'error'
                     ? 'bg-red-50 border-red-200'
                     : caseItem.status === 'generating'
-                    ? 'bg-yellow-50 border-yellow-200'
-                    : 'bg-gray-50 border-gray-200'
-                }`}
+                      ? 'bg-yellow-50 border-yellow-200'
+                      : 'bg-gray-50 border-gray-200'
+                  }`}
               >
                 {/* 케이스 헤더 */}
                 <div className="p-4 flex items-center justify-between">
@@ -1322,6 +1421,11 @@ export default function BatchQueue({ onResultsReady }: Props) {
                     <span className="px-2 py-1 bg-primary-100 text-primary-700 text-sm rounded-lg">
                       {caseItem.topic}
                     </span>
+                    {caseItem.sourceClinic && (
+                      <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded-lg flex items-center gap-1" title={`출처: ${caseItem.sourceClinic}`}>
+                        🔄 {caseItem.sourceClinic}
+                      </span>
+                    )}
                     {/* 포스팅 모드 배지 (클릭으로 변경 가능) */}
                     <button
                       type="button"
@@ -1334,11 +1438,10 @@ export default function BatchQueue({ onResultsReady }: Props) {
                         ))
                       }}
                       disabled={caseItem.status !== 'pending'}
-                      className={`px-2 py-0.5 text-xs rounded-lg transition-all ${
-                        caseItem.writingMode === 'expert'
-                          ? 'bg-blue-100 text-blue-700 hover:bg-blue-200'
-                          : 'bg-green-100 text-green-700 hover:bg-green-200'
-                      } ${caseItem.status !== 'pending' ? 'cursor-default opacity-70' : 'cursor-pointer'}`}
+                      className={`px-2 py-0.5 text-xs rounded-lg transition-all ${caseItem.writingMode === 'expert'
+                        ? 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+                        : 'bg-green-100 text-green-700 hover:bg-green-200'
+                        } ${caseItem.status !== 'pending' ? 'cursor-default opacity-70' : 'cursor-pointer'}`}
                       title={caseItem.status === 'pending' ? '클릭하여 모드 변경' : ''}
                     >
                       {caseItem.writingMode === 'expert' ? '🏥 임상' : '📚 정보성'}
