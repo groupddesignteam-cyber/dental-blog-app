@@ -94,8 +94,8 @@ export default function DashboardPage() {
             type="button"
             onClick={() => setViewMode('batch')}
             className={`px-6 py-2 rounded-lg font-medium transition-all ${viewMode === 'batch'
-                ? 'bg-white text-primary-600 shadow-sm'
-                : 'text-gray-600 hover:text-gray-900'
+              ? 'bg-white text-primary-600 shadow-sm'
+              : 'text-gray-600 hover:text-gray-900'
               }`}
           >
             ⚡ 배치 모드
@@ -104,8 +104,8 @@ export default function DashboardPage() {
             type="button"
             onClick={() => setViewMode('single')}
             className={`px-6 py-2 rounded-lg font-medium transition-all ${viewMode === 'single'
-                ? 'bg-white text-primary-600 shadow-sm'
-                : 'text-gray-600 hover:text-gray-900'
+              ? 'bg-white text-primary-600 shadow-sm'
+              : 'text-gray-600 hover:text-gray-900'
               }`}
           >
             📝 상세 모드
@@ -116,7 +116,7 @@ export default function DashboardPage() {
       {/* 버전 표시 */}
       <div className="mb-4 text-center">
         <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-gray-100 text-gray-500 text-xs font-mono rounded-full">
-          v3.1.0 — 실무자 피드백 반영 + 용어 정규화 + 줄바꿈 개선
+          v3.1.1 — 문장 삽입 빈도 완화 + 문법 치환 오류 수정
         </span>
       </div>
 
