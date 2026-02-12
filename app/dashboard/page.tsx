@@ -116,7 +116,7 @@ export default function DashboardPage() {
       {/* 버전 표시 */}
       <div className="mb-4 text-center">
         <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-gray-100 text-gray-500 text-xs font-mono rounded-full">
-          v3.3.0 — 배치 모드 지원: 다중 주제 일괄 차용 기능 추가
+          v3.3.1 — 서론 강화 + 정보 브릿지 섹션 추가
         </span>
       </div>
 
