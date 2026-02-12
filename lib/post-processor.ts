@@ -402,185 +402,130 @@ export function rotateSynonyms(content: string, morphemeB?: string): string {
 }
 
 // ============================================================
-// 5. 형태소 최소 빈도 보장 (부족 시 본론에 자동 삽입)
+// 5. 형태소(지역명) 빈도 및 분포 보장 (7회 고정: 제목1+서론1+본론4+결론1)
 // ============================================================
 
-/** 본문에서 형태소 순수 출현 횟수 (해시태그·치과명 내부 제외) */
-function countMorphemeNet(text: string, morpheme: string, clinicName?: string): number {
-  const clean = text.replace(/#[^\s#]+/g, '')
-  let count = (clean.match(new RegExp(escapeRegex(morpheme), 'g')) || []).length
-  if (clinicName && clinicName.includes(morpheme) && clinicName !== morpheme) {
-    count -= (clean.match(new RegExp(escapeRegex(clinicName), 'g')) || []).length
-  }
-  return Math.max(0, count)
-}
-
-/** Phase 1용 문구 치환 패턴 */
-function getInjectionPatterns(morpheme: string, isRegion: boolean): [RegExp, string][] {
-  if (isRegion) {
-    return [
-      [/이러한 경우/, `${morpheme}에서 이러한 경우`],
-      [/이런 경우/, `${morpheme}에서 이런 경우`],
-      [/이러한 증상/, `${morpheme}에서도 이러한 증상`],
-      [/이런 증상/, `${morpheme}에서도 이런 증상`],
-      [/내원하시는 분/, `${morpheme}에 내원하시는 분`],
-      [/정기 검진/, `${morpheme}에서 정기 검진`],
-      [/정기적인 검진/, `${morpheme}에서 정기적인 검진`],
-      [/정밀 검사/, `${morpheme}에서 정밀 검사`],
-    ]
-  }
-  // morphemeB (치과 or 진료명)
-  const particle = adjustParticle(morpheme, '를')
+/** 본론용 브릿지 문장 (다양성 확보) */
+function getBridgeSentences(region: string): string[] {
   return [
-    [/정밀 진단/, `${morpheme}에서 정밀 진단`],
-    [/정확한 진단/, `${morpheme}에서 정확한 진단`],
-    [/정기적인 검진/, `${morpheme}에서 정기적인 검진`],
-    [/전문적인 관리/, `${morpheme}에서 전문적인 관리`],
-    [/적절한 치료/, `${morpheme}${particle} 통한 적절한 치료`],
-    [/조기 발견/, `${morpheme}에서의 조기 발견`],
-    [/전문의 상담/, `${morpheme} 전문의 상담`],
-    [/치료 계획/, `${morpheme} 치료 계획`],
-  ]
-}
-
-/** Phase 2용 브릿지 문장 */
-function getBridgeSentences(morpheme: string, isRegion: boolean): string[] {
-  if (isRegion) {
-    return [
-      `${morpheme}에서도 이와 유사한 사례가 적지 않습니다.`,
-      `${morpheme} 지역에서도 이에 대한 관심이 높아지고 있습니다.`,
-      `${morpheme}에서도 이러한 증상으로 내원하시는 분들이 많습니다.`,
-      `${morpheme} 지역에서 정기적인 관리가 권장됩니다.`,
-      `${morpheme}에서도 유사한 증례가 보고되고 있습니다.`,
-    ]
-  }
-  return [
-    `${morpheme} 방문 시 이 점을 체크해보시는 것이 좋습니다.`,
-    `${morpheme}에서 꾸준한 검진을 받으시길 권장합니다.`,
-    `가까운 ${morpheme}에서 현재 상태를 확인해보는 것이 바람직합니다.`,
-    `${morpheme}에서 정밀 검사를 통해 알 수 있습니다.`,
-    `${morpheme} 방문을 통해 정확한 진단을 받아보세요.`,
-    `${morpheme}에서 체계적인 관리를 시작해보세요.`,
-    `${morpheme} 전문의와 상담하여 계획을 세워보세요.`,
+    `${region} 방문 시 이 점을 체크해보시는 것이 좋습니다.`,
+    `${region}에서 꾸준한 검진을 받으시길 권장합니다.`,
+    `가까운 ${region} 치과에서 현재 상태를 확인해보는 것이 바람직합니다.`,
+    `${region}에서 정밀 검사를 통해 알 수 있습니다.`,
+    `${region} 방문을 통해 정확한 진단을 받아보세요.`,
+    `${region}에서 체계적인 관리를 시작해보세요.`,
+    `${region} 전문의와 상담하여 계획을 세워보세요.`,
+    `${region}에서도 이와 유사한 사례가 적지 않습니다.`,
+    `${region} 지역에서도 이에 대한 관심이 높아지고 있습니다.`,
+    `${region}에서도 이러한 증상으로 내원하시는 분들이 많습니다.`,
+    `${region} 지역에서 정기적인 관리가 권장됩니다.`,
+    `${region}에서도 유사한 증례가 보고되고 있습니다.`,
   ]
 }
 
 /**
- * 형태소 최소 빈도 보장
- * Phase 1: 본론의 기존 문구에 형태소를 자연스럽게 결합
- * Phase 2: 부족분은 문장 사이에 브릿지 문장 삽입
+ * 지역명 빈도 및 분포 강제 (총 7회)
+ * - 제목(1), 서론(1), 본론(4), 결론(1)
+ * - 부족 시 브릿지 문장 삽입
  */
-export function enforceMorphemeMinimum(
-  content: string,
-  options: PostProcessOptions
-): string {
-  const { region, mainKeyword, clinicName } = options
-  if (!region || !mainKeyword) return content
+export function enforceRegionFrequency(content: string, region: string): string {
+  if (!region) return content
 
-  const morphemeB = mainKeyword.replace(region, '').trim() || '치과'
-  // 목표 빈도 하향 조정 (7 -> 5) : 억지 문장 삽입 방지
-  const MIN_COUNT = 5
-
-  let result = content
-
-  // 형태소A (region) 보강
-  const regionDef = MIN_COUNT - countMorphemeNet(result, region, clinicName)
-  if (regionDef > 0) {
-    result = injectInBody(result, region, regionDef, clinicName, true)
-  }
-
-  // 형태소B 보강
-  const morphBDef = MIN_COUNT - countMorphemeNet(result, morphemeB, clinicName)
-  if (morphBDef > 0) {
-    result = injectInBody(result, morphemeB, morphBDef, clinicName, false)
-  }
-
-  return result
-}
-
-function injectInBody(
-  content: string,
-  morpheme: string,
-  deficit: number,
-  clinicName: string | undefined,
-  isRegion: boolean
-): string {
-  // ## 섹션 기반으로 분할
+  // 1. 섹션 분리
+  // Intro(제목포함) | Body(## ...) | Conclusion(마지막 ## ...)
   const sections = content.split(/^(##\s.*$)/m)
 
-  // ## 헤더 인덱스 수집
-  const headerIdxs: number[] = []
-  for (let i = 0; i < sections.length; i++) {
-    if (/^##\s/.test(sections[i])) headerIdxs.push(i)
-  }
-  if (headerIdxs.length < 2) return content
-
-  // 본론 콘텐츠 인덱스 = 첫 ## 다음 ~ 마지막 ## 직전
-  const bodyContentIdxs: number[] = []
-  for (let h = 0; h < headerIdxs.length - 1; h++) {
-    const ci = headerIdxs[h] + 1
-    if (ci < sections.length) bodyContentIdxs.push(ci)
+  // 헤더 개수 파악
+  let headerCount = 0
+  for (const s of sections) {
+    if (/^##\s/.test(s)) headerCount++
   }
 
-  let remaining = deficit
-  const patterns = getInjectionPatterns(morpheme, isRegion)
+  // 구조가 예상과 다르면(헤더가 너무 적으면) 단순 전체 삽입으로 fallback
+  if (headerCount < 2) return content
 
-  // Phase 1: 문구 치환
-  for (const ci of bodyContentIdxs) {
-    if (remaining <= 0) break
-    if (sections[ci].includes(morpheme)) continue
+  // Conclusion은 마지막 헤더 + 내용
+  const conclusionHeaderIdx = sections.length - 2
+  const conclusionContentIdx = sections.length - 1
 
-    for (const [find, replace] of patterns) {
-      if (remaining <= 0) break
-      if (find.test(sections[ci])) {
-        sections[ci] = sections[ci].replace(find, replace)
-        remaining--
-        break
-      }
-    }
+  // Intro는 첫 번째 섹션 (제목 포함)
+  let introPart = sections[0]
+
+  // Body는 그 사이
+  const bodyIndices: number[] = []
+  for (let i = 1; i < conclusionHeaderIdx; i += 2) {
+    // i: header, i+1: content
+    bodyIndices.push(i + 1)
   }
 
-  // Phase 2: 브릿지 문장 반복 삽입 (morpheme 없는 섹션 우선 → 있는 섹션도 순환)
-  if (remaining > 0) {
-    const bridges = getBridgeSentences(morpheme, isRegion)
+  // 2. 검사 및 보정
+
+  // [서론] (제목 제외 서론 본문에 1회 있는지 확인)
+  // 제목은 첫 줄이라고 가정. 서론 본문에서 체크.
+  const introLines = introPart.split('\n')
+  const titleLine = introLines[0]
+  const introBody = introLines.slice(1).join('\n')
+
+  if (!introBody.includes(region)) {
+    // 서론 마지막에 자연스럽게 추가 (이미 있으면 패스)
+    // 인사가 보통 맨 앞이므로, 맨 뒤에 붙이는게 안전
+    introPart = introPart.trim() + `\n\n${region}에서 알려드렸습니다.`
+  }
+
+  // [본론] (총 4회 맞추기)
+  let currentBodyCount = 0
+  for (const idx of bodyIndices) {
+    currentBodyCount += (sections[idx].match(new RegExp(escapeRegex(region), 'g')) || []).length
+  }
+
+  if (currentBodyCount < 4) {
+    let deficiency = 4 - currentBodyCount
+    const bridges = getBridgeSentences(region)
     let bridgeIdx = 0
-    const MAX_ROUNDS = 3 // 한 섹션당 최대 삽입 횟수 (중복 문장 다 쓰면 종료)
 
-    for (let round = 0; round < MAX_ROUNDS && remaining > 0; round++) {
-      let injectedThisRound = 0
+    // 본론 섹션 순회하며 삽입
+    for (const idx of bodyIndices) {
+      if (deficiency <= 0) break
+      if (sections[idx].includes(region)) continue // 이미 있으면 건너뛰기 (분산 유도)
 
-      for (const ci of bodyContentIdxs) {
-        if (remaining <= 0) break
+      // 적절한 위치(문장 끝)에 삽입
+      const bridge = bridges[bridgeIdx % bridges.length]
+      bridgeIdx++
 
-        // round 0: morpheme 없는 섹션만, round 1+: 모든 섹션
-        if (round === 0 && sections[ci].includes(morpheme)) continue
-
-        // 중복 방지: 이 섹션에 아직 없는 브릿지 문장 찾기
-        let bridge = ''
-        for (let attempt = 0; attempt < bridges.length; attempt++) {
-          const candidate = bridges[(bridgeIdx + attempt) % bridges.length]
-          if (!sections[ci].includes(candidate)) {
-            bridge = candidate
-            bridgeIdx = (bridgeIdx + attempt + 1)
-            break
-          }
-        }
-        if (!bridge) continue // 이 섹션에 모든 브릿지가 이미 존재
-
-        // n번째 마침표 뒤에 삽입 (라운드마다 다른 위치)
-        const dots = [...sections[ci].matchAll(/\.\s/g)]
-        const targetDot = dots.length > round ? dots[round] : dots[dots.length - 1]
-        if (targetDot && targetDot.index !== undefined) {
-          const pos = targetDot.index + 2
-          sections[ci] = sections[ci].slice(0, pos) + bridge + ' ' + sections[ci].slice(pos)
-          remaining--
-          injectedThisRound++
-        }
+      // 첫 번째 마침표 뒤에 삽입 시도
+      const dotMatch = sections[idx].match(/\.\s/)
+      if (dotMatch && dotMatch.index !== undefined) {
+        const insertPos = dotMatch.index + 2
+        sections[idx] = sections[idx].slice(0, insertPos) + bridge + ' ' + sections[idx].slice(insertPos)
+        deficiency--
+      } else {
+        // 마침표 없으면 문단 끝에 추가
+        sections[idx] = sections[idx].trim() + `\n\n${bridge}`
+        deficiency--
       }
+    }
 
-      if (injectedThisRound === 0) break // 더 이상 삽입 불가
+    // 한 바퀴 돌았는데도 부족하면(섹션 수 < 부족분), 있는 섹션에도 추가
+    if (deficiency > 0) {
+      for (const idx of bodyIndices) {
+        if (deficiency <= 0) break
+        const bridge = bridges[bridgeIdx % bridges.length]
+        bridgeIdx++
+        sections[idx] = sections[idx].trim() + `\n\n${bridge}`
+        deficiency--
+      }
     }
   }
+
+  // [결론] (1회 확인)
+  const conclusionText = sections[conclusionHeaderIdx] + sections[conclusionContentIdx]
+  if (!conclusionText.includes(region)) {
+    // 결론 마지막 인사에 추가되어 있을 확률 높지만, 없으면 추가
+    sections[conclusionContentIdx] = sections[conclusionContentIdx].trim() + `\n\n${region}에서 전해드렸습니다.`
+  }
+
+  // 재조립시 introPart 업데이트
+  sections[0] = introPart
 
   return sections.join('')
 }
@@ -618,9 +563,9 @@ export function postProcess(content: string, options: PostProcessOptions): strin
   const morphemeB = options.mainKeyword.replace(options.region, '').trim() || ''
   result = rotateSynonyms(result, morphemeB)
 
-  // Step 5: 형태소 최소 빈도 보장 (부족 시 본론에 자동 삽입)
-  if (options.region && options.mainKeyword) {
-    result = enforceMorphemeMinimum(result, options)
+  // Step 5: 형태소(지역명) 빈도 및 분포 보장 (7회 고정)
+  if (options.region) {
+    result = enforceRegionFrequency(result, options.region)
   }
 
   // Step 6: 문장 종결 후 줄바꿈 보장 ('~다.' 뒤 다음 문장은 새 줄)
@@ -671,3 +616,5 @@ function ensureSentenceLineBreaks(content: string): string {
 
   return result.join('\n')
 }
+
+

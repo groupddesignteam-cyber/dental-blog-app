@@ -116,7 +116,7 @@ export default function DashboardPage() {
       {/* 버전 표시 */}
       <div className="mb-4 text-center">
         <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-gray-100 text-gray-500 text-xs font-mono rounded-full">
-          v3.1.2 — 문법 파괴 수정 (불편감한/요구되는합니다 방지)
+          v3.1.3 — 지역명 빈도 고정 (총 7회: 제목1+서론1+본론4+결론1)
         </span>
       </div>
 
