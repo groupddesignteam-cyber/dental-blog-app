@@ -116,7 +116,7 @@ export default function DashboardPage() {
       {/* 버전 표시 */}
       <div className="mb-4 text-center">
         <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-gray-100 text-gray-500 text-xs font-mono rounded-full">
-          v3.3.2 — 프롬프트 정리 완료: 죽은 코드 제거 + 규칙 통일
+          v3.3.3 — 글자수 대폭 증대 (최소 2,500자 보장 구조) + 염려 삭제
         </span>
       </div>
 
