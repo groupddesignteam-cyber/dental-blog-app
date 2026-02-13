@@ -499,6 +499,40 @@ function checkAIPatterns(content: string): ValidationCheck {
   }
 }
 
+// ── 11. 논문 인용 검사 ──
+function checkCitations(content: string, citePapers?: boolean): ValidationCheck {
+  if (!citePapers) {
+    return { name: '논문 인용', passed: true, severity: 'info', message: '논문 인용 모드 OFF (검사 생략)' }
+  }
+
+  const issues: string[] = []
+
+  // 본문 내 [1], [2] 형태 인용 확인
+  const inlineCitations = content.match(/\[\d+\]/g)
+  if (!inlineCitations || inlineCitations.length === 0) {
+    issues.push('본문에 [1], [2] 형태의 인용 번호가 없습니다')
+  } else {
+    issues.push(`본문 인용 ${inlineCitations.length}건 확인`)
+  }
+
+  // References 섹션 존재 확인
+  const hasReferences = /📎\s*References/i.test(content) || /\[References\]/i.test(content) || /^References$/m.test(content)
+  if (!hasReferences) {
+    issues.push('📎 References 섹션이 없습니다')
+  }
+
+  const passed = (inlineCitations && inlineCitations.length > 0) || hasReferences
+  return {
+    name: '논문 인용',
+    passed: !!passed,
+    severity: passed ? 'info' : 'warning',
+    message: passed
+      ? `논문 인용 ${inlineCitations?.length || 0}건 + References 섹션 ${hasReferences ? '있음' : '없음'}`
+      : '논문 인용 모드 ON이나 인용이 부족합니다',
+    details: issues,
+  }
+}
+
 // ── 전체 검증 실행 ──
 export function validatePost(
   content: string,
@@ -508,6 +542,7 @@ export function validatePost(
     writingMode?: string
     mainKeyword?: string
     region?: string
+    citePapers?: boolean
   } = {}
 ): ValidationResult {
   const checks: ValidationCheck[] = [
@@ -521,6 +556,7 @@ export function validatePost(
     checkSynonymRotation(content, options.mainKeyword, options.region),
     checkEndingVariety(content, options.writingMode || 'expert'),
     checkAIPatterns(content),
+    checkCitations(content, options.citePapers),
   ]
 
   // 항목별 가중치 차등 적용
@@ -535,6 +571,7 @@ export function validatePost(
     '부작용 고지': { error: 5, warning: 4 },
     '어미 다양성': { error: 5, warning: 3 },
     'AI 패턴': { error: 8, warning: 5 },
+    '논문 인용': { error: 5, warning: 3 },
   }
 
   let deduction = 0

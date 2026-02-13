@@ -113,6 +113,7 @@ export default function ResultPreview({ result, isStreaming, streamContent, clin
       writingMode: writingMode || 'expert',
       mainKeyword: mainKeyword || result.keywords?.main || '',
       region: region || '',
+      citePapers: !!(result.references && result.references.length > 0),
     })
   }, [result, clinicName, region, topic, writingMode, mainKeyword])
 
@@ -248,6 +249,26 @@ export default function ResultPreview({ result, isStreaming, streamContent, clin
               </span>
             </div>
           </div>
+
+          {/* 논문 인용 */}
+          {result.references && result.references.length > 0 && (
+            <div className="mt-3 pt-3 border-t border-gray-100">
+              <span className="text-sm font-medium text-gray-700">📎 References:</span>
+              <div className="mt-1 space-y-1">
+                {result.references.map((ref, i) => (
+                  <p key={ref.pmid} className="text-xs text-gray-500">
+                    [{i + 1}] {ref.authors}. &quot;{ref.title}&quot; <em>{ref.journal}</em>, {ref.year}.
+                    {ref.doi && (
+                      <a href={`https://doi.org/${ref.doi}`} target="_blank" rel="noopener noreferrer"
+                         className="text-blue-600 hover:underline ml-1">
+                        DOI
+                      </a>
+                    )}
+                  </p>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* 복사 버튼 */}
           <div className="flex gap-2">

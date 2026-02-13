@@ -513,6 +513,29 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
         </p>
       </div>
 
+      {/* 논문 인용 옵션 - 정보성 모드에서만 표시 */}
+      {formData.writingMode === 'informative' && (
+        <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={formData.citePapers || false}
+              onChange={(e) => setFormData(prev => ({
+                ...prev,
+                citePapers: e.target.checked
+              }))}
+              className="w-5 h-5 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+            />
+            <div>
+              <span className="font-medium text-gray-900">📎 논문 인용 모드</span>
+              <p className="text-xs text-gray-500 mt-0.5">
+                PubMed에서 관련 논문을 검색하여 글에 학술 인용을 추가합니다
+              </p>
+            </div>
+          </label>
+        </div>
+      )}
+
       {/* 치과 정보 */}
       <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">🏥 치과 정보</h3>

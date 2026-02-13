@@ -15,6 +15,7 @@ interface BlogCase {
   sourceClinic?: string // 타 치과 주제 차용 시 원본 치과명
   memo: string
   writingMode: WritingMode
+  citePapers?: boolean // 논문 인용 모드
   mainKeyword?: string // 메인키워드 (사용자 직접 입력)
   images?: UploadedImage[]
   status: 'pending' | 'generating' | 'completed' | 'error'
@@ -182,6 +183,7 @@ function BatchValidationPanel({ caseItem }: { caseItem: BlogCase }) {
       writingMode: caseItem.writingMode,
       mainKeyword: caseItem.mainKeyword,
       region: caseItem.region,
+      citePapers: !!(caseItem.result.references && caseItem.result.references.length > 0),
     })
   }, [caseItem.result?.content, caseItem.clinicName, caseItem.topic, caseItem.writingMode, caseItem.mainKeyword])
 
@@ -298,6 +300,9 @@ export default function BatchQueue({ onResultsReady }: Props) {
 
   // 포스팅 모드 선택 (기본: 임상 포스팅)
   const [postingMode, setPostingMode] = useState<WritingMode>('expert')
+
+  // 논문 인용 모드 (정보성 모드에서만 활성)
+  const [citePapers, setCitePapers] = useState(false)
 
   // 케이스 큐
   const [cases, setCases] = useState<BlogCase[]>([])
@@ -518,6 +523,7 @@ export default function BatchQueue({ onResultsReady }: Props) {
       sourceClinic: selectedSourceClinic || undefined,
       memo: memo.trim(),
       writingMode: postingMode,
+      citePapers: postingMode === 'informative' ? citePapers : false,
       mainKeyword: mainKeyword.trim() || undefined,
       images: sortedImages.length > 0 ? sortedImages : undefined,
       status: 'pending',
@@ -551,6 +557,7 @@ export default function BatchQueue({ onResultsReady }: Props) {
         sourceClinic: startItem.clinic,
         memo: memo.trim(),
         writingMode: postingMode,
+        citePapers: postingMode === 'informative' ? citePapers : false,
         mainKeyword: mainKeyword.trim() || undefined,
         images: sortedImages.length > 0 ? [...sortedImages] : undefined, // 복사해서 할당
         status: 'pending',
@@ -682,6 +689,7 @@ export default function BatchQueue({ onResultsReady }: Props) {
           : `${caseItem.topic} 치료`,
         model,
         writingMode: caseItem.writingMode,
+        citePapers: caseItem.citePapers || false,
         mainKeyword: caseItem.mainKeyword || undefined,
         images: caseItem.images?.map((img) => ({
           name: img.name,
@@ -1436,6 +1444,22 @@ export default function BatchQueue({ onResultsReady }: Props) {
             ))}
           </div>
         </div>
+
+        {/* 논문 인용 옵션 - 정보성 모드에서만 */}
+        {postingMode === 'informative' && (
+          <div className="mb-3">
+            <label className="flex items-center gap-2 cursor-pointer text-sm">
+              <input
+                type="checkbox"
+                checked={citePapers}
+                onChange={(e) => setCitePapers(e.target.checked)}
+                className="w-4 h-4 rounded border-gray-300 text-green-600 focus:ring-green-500"
+              />
+              <span className="text-gray-700">📎 논문 인용 모드</span>
+              <span className="text-xs text-gray-400">(PubMed 학술 인용)</span>
+            </label>
+          </div>
+        )}
 
         <button
           type="button"

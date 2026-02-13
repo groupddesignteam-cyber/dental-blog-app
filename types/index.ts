@@ -66,6 +66,8 @@ export interface GenerateFormData {
   mainKeyword?: string
   // 타 치과 주제 차용 시 원본 치과명 (RAG 참조용)
   sourceClinic?: string
+  // 논문 인용 모드 (PubMed 검색)
+  citePapers?: boolean
 }
 
 // 키워드 분석 결과 타입 (클라이언트용)
@@ -102,6 +104,17 @@ export interface Post {
   createdAt: string
 }
 
+// PubMed 논문 인용 정보
+export interface PaperCitation {
+  pmid: string
+  title: string
+  authors: string
+  journal: string
+  year: number
+  doi?: string
+  abstract?: string
+}
+
 export interface GenerateResult {
   title: string
   content: string
@@ -113,4 +126,5 @@ export interface GenerateResult {
   charCount: number
   imageFileNames?: string[]
   warnings?: string[] // 의료법 위반, 글자수 경고 등
+  references?: PaperCitation[] // 논문 인용 목록
 }
