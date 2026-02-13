@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { GenerateFormData, UploadedImage, KeywordAnalysisState, WritingMode, ResearchResult } from '@/types'
+import { getDefaultTreatments, detectSpecialty, SPECIALTY_LABELS } from '@/data/specialties'
 
 interface Props {
   onSubmit: (data: GenerateFormData) => void
@@ -19,20 +20,7 @@ const WRITING_MODES: Array<{ id: WritingMode; name: string; description: string;
   { id: 'informative', name: '📚 정보성 포스팅', description: '일반인 눈높이 · 쉬운 비유 · 문어체 + 친근한 톤', icon: '📚' },
 ]
 
-// 기본 치료 목록 (시트에서 못 가져올 경우)
-const DEFAULT_TREATMENTS = [
-  '임플란트',
-  '신경치료',
-  '충치치료',
-  '사랑니',
-  '치아교정',
-  '스케일링',
-  '치주치료',
-  '보철(크라운)',
-  '라미네이트',
-  '치아미백',
-  '소아치과',
-]
+// 기본 치료 목록은 data/specialties.ts에서 과목별로 관리
 
 // 검색 가능한 Combobox 컴포넌트
 function SearchableSelect({
@@ -249,9 +237,9 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
     fetchSheetData()
   }, [])
 
-  // 치과명 선택 시 해당 치과의 주제 목록 가져오기
+  // 치과명 선택 시 해당 치과의 주제 목록 가져오기 (커스텀 모드에서는 스킵)
   useEffect(() => {
-    if (!formData.clinicName) {
+    if (!formData.clinicName || customClinicMode) {
       setClinicTopics([])
       return
     }
@@ -478,10 +466,14 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
     })
   }
 
-  // 사용할 치료 목록: 치과별 주제 > 시트 전체 주제 > 기본 목록
+  // 과목 자동 감지 (병원명 기반)
+  const detectedSpecialty = formData.clinicName ? detectSpecialty(formData.clinicName) : 'dental'
+  const specialtyDefaults = formData.clinicName ? getDefaultTreatments(formData.clinicName) : getDefaultTreatments('')
+
+  // 사용할 치료 목록: 치과별 주제 > 시트 전체 주제 > 과목별 기본 목록
   const treatmentOptions = clinicTopics.length > 0
     ? clinicTopics
-    : (sheetTreatments.length > 0 ? sheetTreatments : DEFAULT_TREATMENTS)
+    : (sheetTreatments.length > 0 ? sheetTreatments : specialtyDefaults)
 
   // 필수 필드 체크
   const isBasicInfoComplete = formData.clinicName && formData.region && formData.doctorName &&
@@ -604,6 +596,23 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
                   required
                   onCustomInput={() => setCustomClinicMode(true)}
                 />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCustomClinicMode(true)
+                    setFormData(prev => ({
+                      ...prev,
+                      clinicName: '',
+                      region: '',
+                      doctorName: '',
+                      topic: '',
+                      writingMode: 'informative',
+                    }))
+                  }}
+                  className="mt-1.5 text-xs text-amber-600 font-medium hover:text-amber-800 flex items-center gap-1"
+                >
+                  🏥 그 외 병의원 (직접 입력)
+                </button>
               </>
             ) : (
               <>
@@ -613,9 +622,14 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
                   value={formData.clinicName}
                   onChange={handleChange}
                   required
-                  placeholder="예: 서울하이탑치과"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  placeholder="예: 메인비뇨의학과의원, 서울정형외과"
+                  className="w-full px-3 py-2 border border-amber-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 bg-amber-50"
                 />
+                {formData.clinicName && (
+                  <p className="text-[10px] text-amber-500 mt-1">
+                    감지: {SPECIALTY_LABELS[detectedSpecialty]} · RAG 없이 순수 LLM + 리서치 기반 생성
+                  </p>
+                )}
                 {sheetClinics.length > 0 && (
                   <button
                     type="button"
@@ -623,9 +637,9 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
                       setCustomClinicMode(false)
                       setFormData((prev) => ({ ...prev, clinicName: '' }))
                     }}
-                    className="mt-2 text-sm text-gray-500 hover:text-gray-700"
+                    className="mt-1.5 text-xs text-primary-600 font-medium hover:text-primary-800 flex items-center gap-1"
                   >
-                    ← 목록에서 선택
+                    ← 기존 치과 목록으로 돌아가기
                   </button>
                 )}
               </>
@@ -679,6 +693,11 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
                   ({formData.clinicName}의 기존 글 주제 {clinicTopics.length}개)
                 </span>
               )}
+              {clinicTopics.length === 0 && formData.clinicName && !isLoadingClinicTopics && (
+                <span className="ml-2 text-xs text-amber-600 font-normal">
+                  ({SPECIALTY_LABELS[detectedSpecialty]} 기본 목록 · 직접 입력 가능)
+                </span>
+              )}
               {isLoadingClinicTopics && (
                 <span className="ml-2 text-xs text-gray-400 font-normal">불러오는 중...</span>
               )}
@@ -715,7 +734,9 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
                   options={treatmentOptions}
                   value={formData.topic}
                   onChange={(value) => setFormData((prev) => ({ ...prev, topic: value, sourceClinic: '' }))}
-                  placeholder={clinicTopics.length > 0 ? "위 버튼으로 선택하거나 검색..." : "주제/치료 검색 또는 선택..."}
+                  placeholder={clinicTopics.length > 0
+                    ? "위 버튼으로 선택하거나 검색..."
+                    : `${SPECIALTY_LABELS[detectedSpecialty]} 치료 검색 또는 직접 입력...`}
                   required
                   onCustomInput={() => setCustomTopicMode(true)}
                 />

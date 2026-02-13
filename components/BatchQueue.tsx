@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { LLMModel, GenerateResult, UploadedImage, WritingMode, BatchDiversityHints, ResearchResult } from '@/types'
 import { validatePost, ValidationResult, ValidationCheck } from '@/lib/post-validator'
+import { getDefaultTreatments, detectSpecialty, SPECIALTY_LABELS } from '@/data/specialties'
 
 // 케이스 타입
 interface BlogCase {
@@ -30,26 +31,7 @@ interface ClinicPreset {
   doctorName: string
 }
 
-// 기본 치료 목록
-const TREATMENTS = [
-  '임플란트',
-  '신경치료',
-  '충치치료',
-  '사랑니',
-  '치아교정',
-  '스케일링',
-  '치주치료',
-  '보철(크라운)',
-  '라미네이트',
-  '치아미백',
-  '소아치과',
-  '발치',
-  '잇몸치료',
-  '턱관절',
-  '레진',
-  '브릿지',
-  '틀니',
-]
+// 기본 치료 목록은 data/specialties.ts에서 과목별로 관리
 
 // LLM 모델 옵션 (2개만)
 const LLM_MODELS = [
@@ -306,6 +288,12 @@ export default function BatchQueue({ onResultsReady }: Props) {
   // 포스팅 모드 선택 (기본: 임상 포스팅)
   const [postingMode, setPostingMode] = useState<WritingMode>('expert')
 
+  // 그 외 병의원 모드 (RAG 없는 직접 입력)
+  const [isCustomClinic, setIsCustomClinic] = useState(false)
+  const [customClinicName, setCustomClinicName] = useState('')
+  const [customRegion, setCustomRegion] = useState('')
+  const [customDoctor, setCustomDoctor] = useState('')
+
   // 논문 인용 모드 (정보성 모드에서만 활성)
   const [citePapers, setCitePapers] = useState(false)
 
@@ -367,9 +355,9 @@ export default function BatchQueue({ onResultsReady }: Props) {
     loadPresets()
   }, [])
 
-  // 치과명 선택 시 해당 치과의 주제 목록 가져오기
+  // 치과명 선택 시 해당 치과의 주제 목록 가져오기 (커스텀 모드에서는 스킵)
   useEffect(() => {
-    if (!selectedClinic?.name) {
+    if (!selectedClinic?.name || isCustomClinic) {
       setClinicTopics([])
       return
     }
@@ -493,13 +481,21 @@ export default function BatchQueue({ onResultsReady }: Props) {
   // 치과명 목록
   const clinicNames = clinicPresets.map(c => c.name)
 
-  // 치료 목록: 치과별 주제 > 시트 전체 > 기본 목록
-  const allTreatments = clinicTopics.length > 0
-    ? clinicTopics
-    : [...new Set([...sheetTreatments, ...TREATMENTS])].sort()
+  // 과목 자동 감지 (병원명 기반)
+  const clinicNameForDetect = isCustomClinic ? customClinicName : (selectedClinic?.name || '')
+  const detectedSpecialty = detectSpecialty(clinicNameForDetect)
+  const specialtyDefaults = getDefaultTreatments(clinicNameForDetect)
+
+  // 치료 목록: 커스텀 모드 → 과목별 기본 | 프리셋 → 치과별 주제 > 시트 전체 > 과목별 기본
+  const allTreatments = isCustomClinic
+    ? specialtyDefaults
+    : clinicTopics.length > 0
+      ? clinicTopics
+      : [...new Set([...sheetTreatments, ...specialtyDefaults])].sort()
 
   // 치과 선택 핸들러
   const handleClinicSelect = (name: string) => {
+    setIsCustomClinic(false) // 프리셋 선택 시 커스텀 모드 해제
     const preset = clinicPresets.find(c => c.name === name)
     if (preset) {
       setSelectedClinic(preset)
@@ -510,6 +506,21 @@ export default function BatchQueue({ onResultsReady }: Props) {
     // 치과 변경 시 소스 치과 초기화
     setSelectedSourceClinic('')
   }
+
+  // "그 외 병의원" 모드 토글
+  const handleCustomClinicMode = () => {
+    setIsCustomClinic(true)
+    setSelectedClinic(null)
+    setClinicTopics([])
+    setSelectedTopic('')
+    setSelectedSourceClinic('')
+    setPostingMode('informative') // 그 외 병의원 = 정보성 모드 기본
+  }
+
+  // 커스텀 모드에서 사용할 실제 병원 정보
+  const effectiveClinic: ClinicPreset | null = isCustomClinic
+    ? (customClinicName ? { name: customClinicName, region: customRegion, doctorName: customDoctor } : null)
+    : selectedClinic
 
   // 리서치 CC 자동 생성 (정보성 모드)
   const handleResearch = async () => {
@@ -526,7 +537,7 @@ export default function BatchQueue({ onResultsReady }: Props) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           topic: query,
-          clinicName: selectedClinic?.name || undefined,
+          clinicName: effectiveClinic?.name || undefined,
         }),
       })
 
@@ -547,17 +558,23 @@ export default function BatchQueue({ onResultsReady }: Props) {
 
   // 케이스 추가
   const addCase = () => {
-    if (!selectedClinic || !selectedTopic) {
-      alert('치과와 치료를 선택해주세요.')
+    if (!effectiveClinic?.name || !selectedTopic) {
+      alert('병원과 치료를 선택해주세요.')
+      return
+    }
+
+    // 그 외 병의원: 지역, 원장명 필수 체크
+    if (isCustomClinic && (!customRegion.trim() || !customDoctor.trim())) {
+      alert('지역과 원장님 이름을 입력해주세요.')
       return
     }
 
     const sortedImages = getSortedImages()
     const newCase: BlogCase = {
       id: `case-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-      clinicName: selectedClinic.name,
-      region: selectedClinic.region,
-      doctorName: selectedClinic.doctorName,
+      clinicName: effectiveClinic.name,
+      region: effectiveClinic.region,
+      doctorName: effectiveClinic.doctorName,
       topic: selectedTopic,
       sourceClinic: selectedSourceClinic || undefined,
       memo: memo.trim(),
@@ -578,8 +595,8 @@ export default function BatchQueue({ onResultsReady }: Props) {
 
   // 선택된 차용 주제들 일괄 추가
   const addBorrowedBatch = () => {
-    if (!selectedClinic) {
-      alert('치과를 먼저 선택해주세요.')
+    if (!effectiveClinic?.name) {
+      alert('병원을 먼저 선택해주세요.')
       return
     }
 
@@ -591,9 +608,9 @@ export default function BatchQueue({ onResultsReady }: Props) {
     borrowSelection.forEach((startItem) => {
       const newCase: BlogCase = {
         id: `case-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-        clinicName: selectedClinic.name,
-        region: selectedClinic.region,
-        doctorName: selectedClinic.doctorName,
+        clinicName: effectiveClinic.name,
+        region: effectiveClinic.region,
+        doctorName: effectiveClinic.doctorName,
         topic: startItem.topic,
         sourceClinic: startItem.clinic,
         memo: memo.trim(),
@@ -1174,23 +1191,82 @@ export default function BatchQueue({ onResultsReady }: Props) {
         <h3 className="text-lg font-semibold text-gray-900 mb-4">➕ 케이스 추가</h3>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-          {/* 치과 선택 (검색 가능) */}
+          {/* 병원 선택 — 프리셋 모드 vs 그 외 병의원 모드 */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              치과 <span className="text-red-500">*</span>
+              {isCustomClinic ? '병원명' : '치과'} <span className="text-red-500">*</span>
             </label>
-            {isLoadingPresets ? (
-              <div className="w-full px-3 py-2 border border-gray-300 rounded-xl bg-gray-50 text-gray-500">
-                로딩 중...
-              </div>
+
+            {!isCustomClinic ? (
+              <>
+                {isLoadingPresets ? (
+                  <div className="w-full px-3 py-2 border border-gray-300 rounded-xl bg-gray-50 text-gray-500">
+                    로딩 중...
+                  </div>
+                ) : (
+                  <SearchableSelect
+                    options={clinicNames}
+                    value={selectedClinic?.name || ''}
+                    onChange={handleClinicSelect}
+                    placeholder="치과명 검색..."
+                    allowCustom
+                  />
+                )}
+                <button
+                  type="button"
+                  onClick={handleCustomClinicMode}
+                  className="mt-1.5 text-xs text-amber-600 font-medium hover:text-amber-800 flex items-center gap-1"
+                >
+                  🏥 그 외 병의원 (직접 입력)
+                </button>
+              </>
             ) : (
-              <SearchableSelect
-                options={clinicNames}
-                value={selectedClinic?.name || ''}
-                onChange={handleClinicSelect}
-                placeholder="치과명 검색..."
-                allowCustom
-              />
+              <>
+                <input
+                  type="text"
+                  value={customClinicName}
+                  onChange={(e) => setCustomClinicName(e.target.value)}
+                  placeholder="예: 메인비뇨의학과의원, 서울정형외과"
+                  className="w-full px-3 py-2 border border-amber-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 bg-amber-50"
+                />
+                {/* 지역 + 원장명 (커스텀 모드에서만) */}
+                <div className="grid grid-cols-2 gap-2 mt-2">
+                  <input
+                    type="text"
+                    value={customRegion}
+                    onChange={(e) => setCustomRegion(e.target.value)}
+                    placeholder="지역명 *"
+                    className="px-2 py-1.5 text-sm border border-amber-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500 bg-amber-50"
+                  />
+                  <input
+                    type="text"
+                    value={customDoctor}
+                    onChange={(e) => setCustomDoctor(e.target.value)}
+                    placeholder="원장명 *"
+                    className="px-2 py-1.5 text-sm border border-amber-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500 bg-amber-50"
+                  />
+                </div>
+                {customClinicName && (
+                  <p className="text-[10px] text-amber-500 mt-1">
+                    감지: {SPECIALTY_LABELS[detectedSpecialty]} · RAG 없이 순수 LLM + 리서치 기반 생성
+                  </p>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsCustomClinic(false)
+                    setCustomClinicName('')
+                    setCustomRegion('')
+                    setCustomDoctor('')
+                    if (clinicPresets.length > 0) {
+                      setSelectedClinic(clinicPresets[0])
+                    }
+                  }}
+                  className="mt-1.5 text-xs text-primary-600 font-medium hover:text-primary-800 flex items-center gap-1"
+                >
+                  ← 기존 치과 목록으로 돌아가기
+                </button>
+              </>
             )}
           </div>
 
@@ -1198,13 +1274,26 @@ export default function BatchQueue({ onResultsReady }: Props) {
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               치료 <span className="text-red-500">*</span>
-              {clinicTopics.length > 0 && (
-                <span className="ml-1 text-xs text-primary-600 font-normal">
-                  ({selectedClinic?.name} 주제 {clinicTopics.length}개)
+              {isCustomClinic ? (
+                <span className="ml-1 text-xs text-amber-600 font-normal">
+                  ({SPECIALTY_LABELS[detectedSpecialty]} 기본 목록 · 직접 입력 가능)
                 </span>
-              )}
-              {isLoadingClinicTopics && (
-                <span className="ml-1 text-xs text-gray-400 font-normal">불러오는 중...</span>
+              ) : (
+                <>
+                  {clinicTopics.length > 0 && (
+                    <span className="ml-1 text-xs text-primary-600 font-normal">
+                      ({selectedClinic?.name} 주제 {clinicTopics.length}개)
+                    </span>
+                  )}
+                  {clinicTopics.length === 0 && selectedClinic?.name && !isLoadingClinicTopics && (
+                    <span className="ml-1 text-xs text-amber-600 font-normal">
+                      ({SPECIALTY_LABELS[detectedSpecialty]} 기본 목록 · 직접 입력 가능)
+                    </span>
+                  )}
+                  {isLoadingClinicTopics && (
+                    <span className="ml-1 text-xs text-gray-400 font-normal">불러오는 중...</span>
+                  )}
+                </>
               )}
             </label>
             <SearchableSelect
@@ -1214,7 +1303,9 @@ export default function BatchQueue({ onResultsReady }: Props) {
                 setSelectedTopic(val)
                 setSelectedSourceClinic('')
               }}
-              placeholder={clinicTopics.length > 0 ? `${selectedClinic?.name} 주제 검색...` : "치료 검색..."}
+              placeholder={clinicTopics.length > 0
+                ? `${selectedClinic?.name} 주제 검색...`
+                : `${SPECIALTY_LABELS[detectedSpecialty]} 치료 검색 또는 직접 입력...`}
               allowCustom
             />
 
@@ -1413,24 +1504,24 @@ export default function BatchQueue({ onResultsReady }: Props) {
               type="text"
               value={mainKeyword}
               onChange={(e) => setMainKeyword(e.target.value)}
-              placeholder={selectedClinic?.region && selectedTopic
-                ? `예: ${selectedClinic.region} 치과  또는  ${selectedClinic.region} ${selectedTopic}`
+              placeholder={effectiveClinic?.region && selectedTopic
+                ? `예: ${effectiveClinic.region} ${SPECIALTY_LABELS[detectedSpecialty]}  또는  ${effectiveClinic.region} ${selectedTopic}`
                 : '예: 부평 치과  또는  부평 임플란트'}
               className="flex-1 px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500"
             />
-            {selectedClinic?.region && (
+            {effectiveClinic?.region && (
               <button
                 type="button"
-                onClick={() => setMainKeyword(`${selectedClinic.region} 치과`)}
+                onClick={() => setMainKeyword(`${effectiveClinic.region} ${SPECIALTY_LABELS[detectedSpecialty]}`)}
                 className="px-3 py-2 text-xs bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100 whitespace-nowrap border border-blue-200"
               >
-                지역+치과
+                지역+{SPECIALTY_LABELS[detectedSpecialty]}
               </button>
             )}
-            {selectedClinic?.region && selectedTopic && (
+            {effectiveClinic?.region && selectedTopic && (
               <button
                 type="button"
-                onClick={() => setMainKeyword(`${selectedClinic.region} ${selectedTopic}`)}
+                onClick={() => setMainKeyword(`${effectiveClinic.region} ${selectedTopic}`)}
                 className="px-3 py-2 text-xs bg-green-50 text-green-600 rounded-xl hover:bg-green-100 whitespace-nowrap border border-green-200"
               >
                 지역+진료
@@ -1550,7 +1641,7 @@ export default function BatchQueue({ onResultsReady }: Props) {
         <button
           type="button"
           onClick={addCase}
-          disabled={!selectedClinic?.name || !selectedTopic || isGenerating}
+          disabled={!effectiveClinic?.name || !selectedTopic || isGenerating}
           className="w-full py-3 px-4 bg-primary-500 text-white font-medium rounded-xl hover:bg-primary-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
           + 큐에 추가 ({postingMode === 'expert' ? '🏥 임상' : '📚 정보성'})
