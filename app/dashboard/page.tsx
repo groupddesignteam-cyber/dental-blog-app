@@ -116,7 +116,7 @@ export default function DashboardPage() {
       {/* 버전 표시 */}
       <div className="mb-4 text-center">
         <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-gray-100 text-gray-500 text-xs font-mono rounded-full">
-          v3.3.3 — 글자수 대폭 증대 (최소 2,500자 보장 구조) + 염려 삭제
+          v3.4.0 — 글자수 상한 해제 + 이미지 3단계 서술 (판독→의미→맥락)
         </span>
       </div>
 
