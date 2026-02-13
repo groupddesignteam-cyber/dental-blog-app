@@ -248,6 +248,9 @@ function checkMedicalLaw(content: string): ValidationCheck {
     [/부작용\s*(?:0%|없|zero)/, '부작용 단정'],
     [/아프지\s*않/, '부작용 단정'],
     [/통증\s*없는/, '부작용 단정'],
+    [/성공률\s*\d{2,3}%/, '효과 보장(성공률)'],
+    [/생존율\s*\d{2,3}%/, '효과 보장(생존율)'],
+    [/좋은\s*결과/, '효과 보장'],
   ]
 
   for (const [pattern, category] of guaranteePatterns) {
@@ -319,21 +322,39 @@ function checkMedicalLaw(content: string): ValidationCheck {
 // ── 6. 금칙어 검사 ──
 function checkForbiddenWords(content: string): ValidationCheck {
   // CLAUDE.md 금칙어 중 의미 있는 2글자 이상 단어만 선별
-  const forbiddenWords = [
-    '걱정', '경험', '고민', '고통', '고생', '공유',
-    '너무', '만족', '무척', '불안', '불편',
-    '힘들', '해결', '해소', '해주', '해보', '해본',
-    '과도', '과다', '과함',
+  // + 대체어 안내 포함
+  const forbiddenWordsMap: [string, string][] = [
+    ['걱정', '→ 염려, 우려'],
+    ['경험', '→ 겪다, 체험'],
+    ['고민', '→ 숙고, 생각'],
+    ['고통', '→ 아픔, 통증'],
+    ['고생', '→ 수고, 어려움'],
+    ['공유', '→ 안내, 전달'],
+    ['너무', '→ 매우, 굉장히'],
+    ['만족', '→ 흡족, 기쁨'],
+    ['무척', '→ 매우, 상당히'],
+    ['불안', '→ 초조, 마음이 편치 않은'],
+    ['불편', '→ 부담, 어려움'],
+    ['힘들', '→ 어렵다, 힘겹다'],
+    ['해결', '→ 처리, 극복, 개선'],
+    ['해소', '→ 완화, 줄이다'],
+    ['해주', '→ 드리다, 진행하다'],
+    ['해보', '→ 시도하다, 받아보다'],
+    ['해본', '→ 시도한, 받아본'],
+    ['과도', '→ 지나친, 무리한'],
+    ['과다', '→ 지나친, 많은'],
   ]
 
+  const cleanContent = getCleanContent(content)
   const found: string[] = []
 
-  for (const word of forbiddenWords) {
-    // 독립 단어 매칭 (앞뒤가 공백/줄바꿈/문장부호/시작/끝)
-    const regex = new RegExp(`(?:^|[\\s,.'"\u201C\u201D\u00B7(])${escapeRegex(word)}(?=[\\s,.'"\u201C\u201D\u00B7)!?]|$)`, 'gm')
-    const matches = content.match(regex)
+  for (const [word, replacement] of forbiddenWordsMap) {
+    // 한국어 텍스트에서 독립적으로 사용된 금칙어 매칭
+    // 앞: 줄시작 / 공백 / 문장부호  뒤: 공백 / 문장부호 / 조사 / 줄끝
+    const regex = new RegExp(`(?:^|[\\s,.'"\u201C\u201D\u00B7(])${escapeRegex(word)}`, 'gm')
+    const matches = cleanContent.match(regex)
     if (matches && matches.length > 0) {
-      found.push(`"${word}" ${matches.length}회`)
+      found.push(`"${word}" ${matches.length}회 ${replacement}`)
     }
   }
 

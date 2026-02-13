@@ -629,15 +629,32 @@ ${topicPatterns.length > 0 ? topicPatterns.map(p => `- ${p}`).join('\n') : ''}
 
 // 해시태그 제외 글자수 계산 함수 (공백 제외)
 function countContentChars(content: string): number {
-  // 1. 해시태그 패턴 제거 (#키워드 형태 - 띄어쓰기 전까지)
-  let cleanContent = content.replace(/#[^\s#]+/g, '')
+  // 1. 글자수에서 제외할 섹션 제거
+  let cleanContent = content
 
-  // 2. 해시태그만 있는 줄 제거 (빈 줄이 된 경우)
+  // 📎 References 섹션 전체 제거 (📎 References ~ 끝 또는 다음 섹션까지)
+  cleanContent = cleanContent.replace(/📎\s*References[\s\S]*?(?=\n\n#|\n#{1,6}\s|$)/gi, '')
+  cleanContent = cleanContent.replace(/\[References\][\s\S]*?(?=\n\n#|\n#{1,6}\s|$)/gi, '')
+
+  // ※ 부작용 고지문 제거
+  cleanContent = cleanContent.replace(/※\s*[^\n]+(\n[^\n※#]*)*(?=\n\n|$)/g, '')
+
+  // 📷 이미지 플레이스홀더 제거
+  cleanContent = cleanContent.replace(/📷\s*\[[^\]]*\]/g, '')
+  cleanContent = cleanContent.replace(/\[IMAGE_\d+\]/g, '')
+
+  // (출처: ...) 표기 제거
+  cleanContent = cleanContent.replace(/\(출처:\s*[^)]*\)/g, '')
+
+  // 2. 해시태그 패턴 제거 (#키워드 형태 - 띄어쓰기 전까지)
+  cleanContent = cleanContent.replace(/#[^\s#]+/g, '')
+
+  // 3. 해시태그만 있는 줄 제거 (빈 줄이 된 경우)
   cleanContent = cleanContent.split('\n')
     .filter(line => line.trim().length > 0 || line === '')
     .join('\n')
 
-  // 3. 마크다운 태그 제외한 순수 텍스트
+  // 4. 마크다운 태그 제외한 순수 텍스트
   const pureText = cleanContent
     .replace(/^#{1,6}\s+/gm, '')  // 제목 마크다운
     .replace(/\*\*|__/g, '')     // 볼드
@@ -1230,6 +1247,27 @@ CC에 리서치 데이터(핵심 팩트, 흔한 오해, FAQ, 논문)가 포함�
 4. **통증/부작용 단정 금지**: 무통→저통증, 부작용 없음→금지, 아프지 않→통증이 적
 5. **전문 용어 사용**: 크라운→지르코니아 보철, 때우기→수복, 이빨→치아, 씌우기→보철
 6. **환자 유인/알선 금지**: 무료, 할인, 상품권, 이벤트, 가성비 표현 절대 금지
+7. **효과 보장/성공률 금지**: "치료 성공률 90%", "완치", "좋은 결과" → "예후가 양호한 것으로 보고", "적절한 관리가 가능"
+
+### 🚫 금칙어 치환 규칙 (필수!)
+아래 단어는 글에서 **절대 사용 금지**입니다. 반드시 대체어를 쓰세요:
+- 걱정 → 염려, 우려 ("걱정하지 마세요" ❌ → "염려하지 않으셔도 됩니다" ✅)
+- 경험 → 겪다, 접하다 ("경험하게 됩니다" ❌ → "겪게 됩니다" ✅)
+- 고민 → 숙고, 생각
+- 고통 → 통증, 아픔
+- 너무 → 매우, 상당히
+- 불안 → 마음이 편치 않은
+- 만족 → 흡족
+- 해결 → 개선, 처리, 극복
+
+### 📋 제목/병원명/마무리 규칙
+- **제목**: 궁금증/고민 형태 (예: "혈뇨가 나왔는데, 전립선암일까요?"), 20~30자
+  - ❌ 제목에 병원명 넣지 마세요!
+  - ❌ "~에서 알려드립니다" 형태 금지
+- **병원명 사용 위치**: 서문 인사 + 마무리 인사에서만!
+  - ❌ 본문 중간에 "~에서 진료하면서", "~지역에서도 좋은 결과" 등 금지
+- **마무리 인사**: "[지역] [병원명] [이름]이었습니다." ← 여기서 끝!
+  - ❌ "감사합니다" 추가 금지
 
 ### 필수 포함 항목
 - Q&A 블록 (스마트블록용)
