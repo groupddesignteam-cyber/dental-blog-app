@@ -170,19 +170,19 @@ function checkKeywordFrequency(
     ? mainKeyword.replace(region, '').trim() || ''
     : ''
 
-  // 형태소A (region) 카운트: 목표 7, 5~9 OK
+  // 형태소A (region) 카운트: 목표 7, 허용 6~8
   if (region) {
     const regionCount = (cleanContent.match(new RegExp(escapeRegex(region), 'g')) || []).length
     if (regionCount > 8) {
       issues.push(`"${region}" ${regionCount}회 (형태소A 목표 7, 최대 8 초과)`)
-    } else if (regionCount < 5) {
-      issues.push(`"${region}" ${regionCount}회 (형태소A 목표 7, 최소 5 미달)`)
+    } else if (regionCount < 6) {
+      issues.push(`"${region}" ${regionCount}회 (형태소A 목표 7, 최소 6 미달)`)
     } else {
       info.push(`"${region}" ${regionCount}회 (형태소A)`)
     }
   }
 
-  // 형태소B 카운트: 목표 7, 5~9 OK
+  // 형태소B 카운트: 목표 7, 허용 5~8
   if (morphemeB) {
     const morphBTotal = (cleanContent.match(new RegExp(escapeRegex(morphemeB), 'g')) || []).length
     // 치과명 내부에 포함된 morphemeB 횟수 차감 (예: "부평치과" 안의 "치과")
@@ -192,8 +192,8 @@ function checkKeywordFrequency(
     }
     const morphBCount = morphBTotal - clinicOverlap
 
-    if (morphBCount > 9) {
-      issues.push(`"${morphemeB}" ${morphBCount}회 (형태소B 목표 7, 최대 9 초과)${clinicOverlap ? ` [치과명 내 ${clinicOverlap}회 제외]` : ''}`)
+    if (morphBCount > 8) {
+      issues.push(`"${morphemeB}" ${morphBCount}회 (형태소B 목표 7, 최대 8 초과)${clinicOverlap ? ` [치과명 내 ${clinicOverlap}회 제외]` : ''}`)
     } else if (morphBCount < 5) {
       issues.push(`"${morphemeB}" ${morphBCount}회 (형태소B 목표 7, 최소 5 미달)${clinicOverlap ? ` [치과명 내 ${clinicOverlap}회 제외]` : ''}`)
     } else {

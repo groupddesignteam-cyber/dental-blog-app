@@ -330,15 +330,6 @@ export function enforceMorphemeLimit(
 // 4. 동의어 회전 (고빈도 일반 단어)
 // ============================================================
 
-const WATCH_WORDS = ['치료', '시술', '수술', '진행', '확인', '상태', '경우', '필요']
-
-/**
- * 동의어 회전 강제 적용
- * - 전체 6회 이하로 유지
- * - 섹션(##)당 3회 이하로 유지
- * - 이미 처리된 단어의 동의어는 건너뜀 (연쇄 교체 방지)
- * - morphemeB가 복합어(근관치료 등)이면 해당 단어는 동의어 회전에서 보호
- */
 /**
  * 동의어 회전 강제 적용 (전체 단어 대상)
  * - Region, Clinic, MainKeyword를 제외한 모든 단어는 전체 6회 초과 시 교체
@@ -447,13 +438,13 @@ export function rotateSynonyms(content: string, options: PostProcessOptions): st
 /** 본론용 브릿지 문장 (다양성 확보) */
 function getBridgeSentences(region: string): string[] {
   return [
-    `${region} 방문 시 이 점을 체크해보시는 것이 좋습니다.`,
+    `${region} 방문 시 이 점을 확인해보시는 것이 좋습니다.`,
     `${region}에서 꾸준한 검진을 받으시길 권장합니다.`,
     `가까운 ${region} 치과에서 현재 상태를 확인해보는 것이 바람직합니다.`,
-    `${region}에서 정밀 검사를 통해 알 수 있습니다.`,
-    `${region} 방문을 통해 정확한 진단을 받아보세요.`,
-    `${region}에서 체계적인 관리를 시작해보세요.`,
-    `${region} 전문의와 상담하여 계획을 세워보세요.`,
+    `${region}에서 정밀 검사를 통해 확인하실 수 있습니다.`,
+    `${region} 방문을 통해 정확한 진단을 받아보시길 권장합니다.`,
+    `${region}에서 체계적인 관리를 시작하시는 것이 바람직합니다.`,
+    `${region} 전문의와 상담하여 계획을 수립하시길 권장합니다.`,
     `${region}에서도 이와 유사한 사례가 적지 않습니다.`,
     `${region} 지역에서도 이에 대한 관심이 높아지고 있습니다.`,
     `${region}에서도 이러한 증상으로 내원하시는 분들이 많습니다.`,
@@ -502,7 +493,6 @@ export function enforceRegionFrequency(content: string, region: string): string 
   // [서론] (제목 제외 서론 본문에 1회 있는지 확인)
   // 제목은 첫 줄이라고 가정. 서론 본문에서 체크.
   const introLines = introPart.split('\n')
-  const titleLine = introLines[0]
   const introBody = introLines.slice(1).join('\n')
 
   if (!introBody.includes(region)) {
@@ -598,8 +588,7 @@ export function postProcess(content: string, options: PostProcessOptions): strin
     result = enforceMorphemeLimit(result, options)
   }
 
-  // Step 4: 동의어 회전 (고빈도 일반 단어)
-  // Step 4: 동의어 회전 (고빈도 일반 단어 - 전체 6회 제한)
+  // Step 4: 동의어 회전 (전체 6회 제한)
   result = rotateSynonyms(result, options)
 
   // Step 5: 형태소(지역명) 빈도 및 분포 보장 (7회 고정)
