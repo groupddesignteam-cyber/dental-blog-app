@@ -116,7 +116,7 @@ export default function DashboardPage() {
       {/* 버전 표시 */}
       <div className="mb-4 text-center">
         <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-gray-100 text-gray-500 text-xs font-mono rounded-full">
-          v3.6.0 — Skills + AEO/GEO + PubMed 논문 인용
+          v3.7.0 — 정보성 리서치 CC 자동 생성 (PubMed + RAG + Gemini)
         </span>
       </div>
 

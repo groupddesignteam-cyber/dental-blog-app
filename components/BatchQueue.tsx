@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { LLMModel, GenerateResult, UploadedImage, WritingMode, BatchDiversityHints } from '@/types'
+import { LLMModel, GenerateResult, UploadedImage, WritingMode, BatchDiversityHints, ResearchResult } from '@/types'
 import { validatePost, ValidationResult, ValidationCheck } from '@/lib/post-validator'
 
 // 케이스 타입
@@ -284,6 +284,11 @@ export default function BatchQueue({ onResultsReady }: Props) {
   const [memo, setMemo] = useState('')
   const [mainKeyword, setMainKeyword] = useState('')
 
+  // 리서치 CC (정보성 모드)
+  const [researchQuery, setResearchQuery] = useState('')
+  const [isResearching, setIsResearching] = useState(false)
+  const [researchResult, setResearchResult] = useState<ResearchResult | null>(null)
+
   // 타 치과 주제 불러오기 상태
   const [sheetAllClinicTopics, setSheetAllClinicTopics] = useState<Array<{ clinic: string; topic: string }>>([])
   const [borrowTopicMode, setBorrowTopicMode] = useState(false)
@@ -506,6 +511,40 @@ export default function BatchQueue({ onResultsReady }: Props) {
     setSelectedSourceClinic('')
   }
 
+  // 리서치 CC 자동 생성 (정보성 모드)
+  const handleResearch = async () => {
+    const query = researchQuery.trim() || selectedTopic
+    if (!query) {
+      alert('리서치할 주제를 입력해주세요.')
+      return
+    }
+
+    setIsResearching(true)
+    try {
+      const res = await fetch('/api/research', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          topic: query,
+          clinicName: selectedClinic?.name || undefined,
+        }),
+      })
+
+      const data = await res.json()
+      if (data.success && data.research) {
+        setResearchResult(data.research)
+        setMemo(data.research.formattedCC)
+      } else {
+        alert(data.error || '리서치에 실패했습니다.')
+      }
+    } catch (error) {
+      console.error('Research error:', error)
+      alert('리서치에 실패했습니다.')
+    } finally {
+      setIsResearching(false)
+    }
+  }
+
   // 케이스 추가
   const addCase = () => {
     if (!selectedClinic || !selectedTopic) {
@@ -533,6 +572,8 @@ export default function BatchQueue({ onResultsReady }: Props) {
     setMemo('')
     setMainKeyword('')
     setImages([])
+    setResearchQuery('')
+    setResearchResult(null)
   }
 
   // 선택된 차용 주제들 일괄 추가
@@ -1301,16 +1342,61 @@ export default function BatchQueue({ onResultsReady }: Props) {
             </div>
           </div>
 
-          {/* 메모 */}
+          {/* CC / 메모 — 모드별 분기 */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              CC / 메모 (선택)
+              {postingMode === 'informative' ? '📚 리서치 주제 / CC (선택)' : 'CC / 메모 (선택)'}
             </label>
+
+            {/* 정보성 모드: 리서치 검색바 */}
+            {postingMode === 'informative' && (
+              <div className="mb-2">
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={researchQuery}
+                    onChange={(e) => setResearchQuery(e.target.value)}
+                    placeholder="리서치 주제 입력 (예: 임플란트 수명, 치아미백 부작용)"
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        handleResearch()
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleResearch}
+                    disabled={isResearching || (!researchQuery.trim() && !selectedTopic)}
+                    className="px-4 py-2 bg-green-500 text-white font-medium rounded-xl hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors whitespace-nowrap flex items-center gap-1.5 text-sm"
+                  >
+                    {isResearching ? (
+                      <>
+                        <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                        </svg>
+                        리서치 중...
+                      </>
+                    ) : '🔍 리서치'}
+                  </button>
+                </div>
+                {researchResult && (
+                  <p className="text-xs text-green-600 mt-1">
+                    📎 논문 {researchResult.paperSummaries.length}건 + 기존글 {researchResult.ragPostCount}건 참조 완료
+                  </p>
+                )}
+              </div>
+            )}
+
             <textarea
               value={memo}
               onChange={(e) => setMemo(e.target.value)}
-              rows={4}
-              placeholder={"예:\n#36 치근단 병소 관찰\n저작 시 통증 호소\n골이식 후 임플란트 식립 예정"}
+              rows={postingMode === 'informative' && memo.length > 200 ? 8 : 4}
+              placeholder={postingMode === 'informative'
+                ? "위 🔍 리서치를 실행하면 자동으로 채워집니다.\n또는 직접 입력도 가능합니다."
+                : "예:\n#36 치근단 병소 관찰\n저작 시 통증 호소\n골이식 후 임플란트 식립 예정"}
               className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 resize-y"
             />
           </div>

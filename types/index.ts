@@ -115,6 +115,21 @@ export interface PaperCitation {
   abstract?: string
 }
 
+// 리서치 CC 자동 생성 결과
+export interface ResearchResult {
+  topic: string
+  keyFacts: string[]
+  misconceptions: string[]
+  faqs: string[]
+  paperSummaries: {
+    citation: string
+    keyFinding: string
+    pmid: string
+  }[]
+  ragPostCount: number
+  formattedCC: string
+}
+
 export interface GenerateResult {
   title: string
   content: string

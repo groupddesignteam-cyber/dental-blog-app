@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { GenerateFormData, UploadedImage, KeywordAnalysisState, WritingMode } from '@/types'
+import { GenerateFormData, UploadedImage, KeywordAnalysisState, WritingMode, ResearchResult } from '@/types'
 
 interface Props {
   onSubmit: (data: GenerateFormData) => void
@@ -217,6 +217,11 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
     sourceClinic: '', // 초기화
   })
 
+  // 리서치 CC (정보성 모드)
+  const [researchQuery, setResearchQuery] = useState('')
+  const [isResearching, setIsResearching] = useState(false)
+  const [researchResult, setResearchResult] = useState<ResearchResult | null>(null)
+
   // 시트 데이터 가져오기
   useEffect(() => {
     async function fetchSheetData() {
@@ -274,6 +279,40 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
     }
     fetchClinicTopics()
   }, [formData.clinicName])
+
+  // 리서치 CC 자동 생성 (정보성 모드)
+  const handleResearch = async () => {
+    const query = researchQuery.trim() || formData.customTopic || formData.topic
+    if (!query) {
+      alert('리서치할 주제를 입력해주세요.')
+      return
+    }
+
+    setIsResearching(true)
+    try {
+      const res = await fetch('/api/research', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          topic: query,
+          clinicName: formData.clinicName || undefined,
+        }),
+      })
+
+      const data = await res.json()
+      if (data.success && data.research) {
+        setResearchResult(data.research)
+        setFormData(prev => ({ ...prev, patientInfo: data.research.formattedCC }))
+      } else {
+        alert(data.error || '리서치에 실패했습니다.')
+      }
+    } catch (error) {
+      console.error('Research error:', error)
+      alert('리서치에 실패했습니다.')
+    } finally {
+      setIsResearching(false)
+    }
+  }
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
@@ -797,18 +836,67 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              환자 정보 <span className="text-red-500">*</span>
+              {formData.writingMode === 'informative' ? '📚 리서치 주제 / CC' : '환자 정보'} <span className="text-red-500">*</span>
             </label>
+
+            {/* 정보성 모드: 리서치 검색바 */}
+            {formData.writingMode === 'informative' && (
+              <div className="mb-2">
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={researchQuery}
+                    onChange={(e) => setResearchQuery(e.target.value)}
+                    placeholder="리서치 주제 입력 (예: 임플란트 수명, 치아미백 부작용)"
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        handleResearch()
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleResearch}
+                    disabled={isResearching || (!researchQuery.trim() && !formData.topic && !formData.customTopic)}
+                    className="px-4 py-2 bg-green-500 text-white font-medium rounded-xl hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors whitespace-nowrap flex items-center gap-1.5 text-sm"
+                  >
+                    {isResearching ? (
+                      <>
+                        <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                        </svg>
+                        리서치 중...
+                      </>
+                    ) : '🔍 리서치'}
+                  </button>
+                </div>
+                {researchResult && (
+                  <p className="text-xs text-green-600 mt-1">
+                    📎 논문 {researchResult.paperSummaries.length}건 + 기존글 {researchResult.ragPostCount}건 참조 완료
+                  </p>
+                )}
+              </div>
+            )}
+
             <textarea
               name="patientInfo"
               value={formData.patientInfo}
               onChange={handleChange}
               required
-              rows={4}
-              placeholder={"예:\n#36 치근단 병소 관찰\n저작 시 통증 호소\n골이식 후 임플란트 식립 예정"}
+              rows={formData.writingMode === 'informative' && formData.patientInfo.length > 200 ? 8 : 4}
+              placeholder={formData.writingMode === 'informative'
+                ? "위 🔍 리서치를 실행하면 자동으로 채워집니다.\n또는 직접 입력도 가능합니다."
+                : "예:\n#36 치근단 병소 관찰\n저작 시 통증 호소\n골이식 후 임플란트 식립 예정"}
               className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 resize-y"
             />
-            <p className="mt-1 text-xs text-gray-500">CC(주소), 임상 소견, 치료 계획 등을 상세히 입력하세요</p>
+            <p className="mt-1 text-xs text-gray-500">
+              {formData.writingMode === 'informative'
+                ? '리서치 결과를 편집하거나 직접 작성하세요'
+                : 'CC(주소), 임상 소견, 치료 계획 등을 상세히 입력하세요'}
+            </p>
           </div>
 
           <div>
