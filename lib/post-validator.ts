@@ -50,28 +50,22 @@ function countContentChars(content: string): number {
 // ── 1. 글자수 검사 ──
 function checkCharCount(content: string): ValidationCheck {
   const count = countContentChars(content)
-  const passed = count >= 2500 && count <= 3000
   let message: string
   let severity: 'error' | 'warning' | 'info'
 
   if (count < 2000) {
-    message = `글자수 심각 부족: ${count.toLocaleString()}자 (최소 2,500자)`
+    message = `글자수 심각 부족: ${count.toLocaleString()}자 (최소 2,000자)`
     severity = 'error'
   } else if (count < 2500) {
-    message = `글자수 부족: ${count.toLocaleString()}자 (최소 2,500자)`
-    severity = 'warning'
-  } else if (count > 3500) {
-    message = `글자수 심각 초과: ${count.toLocaleString()}자 (최대 3,000자)`
-    severity = 'error'
-  } else if (count > 3000) {
-    message = `글자수 초과: ${count.toLocaleString()}자 (최대 3,000자)`
+    message = `글자수 부족: ${count.toLocaleString()}자 (권장 2,500자+)`
     severity = 'warning'
   } else {
     message = `글자수 적정: ${count.toLocaleString()}자`
     severity = 'info'
   }
 
-  return { name: '글자수 (2,500~3,000)', passed, severity, message }
+  const passed = count >= 2000
+  return { name: '글자수 (2,000자+)', passed, severity, message }
 }
 
 // ── 2. 치과명 위치 검사 ──
@@ -447,6 +441,64 @@ function checkSynonymRotation(content: string, mainKeyword?: string, region?: st
   }
 }
 
+// ── 9. 어미 다양성 검사 (정보성 모드: ~입니다 3연속 방지) ──
+function checkEndingVariety(content: string, writingMode: string): ValidationCheck {
+  if (writingMode !== 'informative') {
+    return { name: '어미 다양성', passed: true, severity: 'info', message: '임상 모드 (검사 생략)' }
+  }
+
+  const sentences = content.split(/[.!?\n]/).filter(s => s.trim().length > 5)
+  let consecutiveImnida = 0
+  let maxConsecutive = 0
+
+  for (const s of sentences) {
+    const trimmed = s.trim()
+    if (/(?:입니다|됩니다|있습니다|였습니다|바랍니다)\s*$/.test(trimmed)) {
+      consecutiveImnida++
+      maxConsecutive = Math.max(maxConsecutive, consecutiveImnida)
+    } else {
+      consecutiveImnida = 0
+    }
+  }
+
+  const passed = maxConsecutive < 4
+  return {
+    name: '어미 다양성',
+    passed,
+    severity: passed ? 'info' : 'warning',
+    message: passed
+      ? `~입니다 최대 ${maxConsecutive}연속 (적정)`
+      : `~입니다 ${maxConsecutive}연속! (3연속 이하 권장)`,
+  }
+}
+
+// ── 10. AI 패턴 검사 (번호 목록, AI 상투어 검출) ──
+function checkAIPatterns(content: string): ValidationCheck {
+  const patterns: [RegExp, string][] = [
+    [/(?:1단계|2단계|3단계|4단계)\s*[:：]/g, '번호 단계 목록'],
+    [/첫째[,.][\s\S]*둘째[,.][\s\S]*셋째/, '기계적 나열'],
+    [/에\s*대해\s*알아보겠습니다/, 'AI 도입 상투어'],
+    [/아무리\s*강조해도\s*지나치지/, 'AI 상투어'],
+    [/에\s*대해\s*이야기해\s*보겠습니다/, 'AI 도입 상투어'],
+    [/마지막으로\s*정리하자면/, 'AI 마무리 상투어'],
+  ]
+
+  const found: string[] = []
+  for (const [pattern, label] of patterns) {
+    if (pattern.test(content)) {
+      found.push(label)
+    }
+  }
+
+  const passed = found.length === 0
+  return {
+    name: 'AI 패턴',
+    passed,
+    severity: passed ? 'info' : 'warning',
+    message: passed ? 'AI 패턴 없음' : `AI 패턴 ${found.length}건: ${found.join(', ')}`,
+  }
+}
+
 // ── 전체 검증 실행 ──
 export function validatePost(
   content: string,
@@ -467,6 +519,8 @@ export function validatePost(
     checkForbiddenWords(content),
     checkSideEffectNotice(content),
     checkSynonymRotation(content, options.mainKeyword, options.region),
+    checkEndingVariety(content, options.writingMode || 'expert'),
+    checkAIPatterns(content),
   ]
 
   // 항목별 가중치 차등 적용
@@ -476,9 +530,11 @@ export function validatePost(
     '금지 어미': { error: 15, warning: 8 },
     '키워드 빈도 (형태소)': { error: 10, warning: 6 },
     '동의어 회전': { error: 8, warning: 5 },
-    '글자수 (2,500~3,000)': { error: 10, warning: 5 },
+    '글자수 (2,000자+)': { error: 10, warning: 5 },
     '금칙어': { error: 8, warning: 5 },
     '부작용 고지': { error: 5, warning: 4 },
+    '어미 다양성': { error: 5, warning: 3 },
+    'AI 패턴': { error: 8, warning: 5 },
   }
 
   let deduction = 0

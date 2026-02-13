@@ -204,6 +204,52 @@ export function sanitizeForbiddenEndings(content: string, writingMode?: string):
 }
 
 // ============================================================
+// 2.5. 정보성 모드: ~입니다 3연속 자동 교정
+// ============================================================
+
+/**
+ * 정보성 모드에서 ~입니다/됩니다/있습니다가 3문장 이상 연속되면
+ * 3번째부터 ~이죠/~인데요로 자동 교체하여 어미 다양성 확보
+ */
+function breakConsecutiveImnida(content: string, writingMode?: string): string {
+  if (writingMode !== 'informative') return content
+
+  const lines = content.split('\n')
+  let consecutive = 0
+
+  for (let i = 0; i < lines.length; i++) {
+    const trimmed = lines[i].trim()
+    if (!trimmed || /^(#|📷|\[|※|-)/.test(trimmed)) {
+      // 헤더, 이미지, 리스트 등은 카운트 리셋하지 않고 스킵
+      continue
+    }
+
+    if (/(?:입니다|됩니다|있습니다)[.!]?\s*$/.test(trimmed)) {
+      consecutive++
+      if (consecutive >= 3) {
+        // 3번째부터 ~이죠/~인데요로 교체 (교대)
+        if (consecutive % 2 === 1) {
+          lines[i] = lines[i]
+            .replace(/입니다([.!]?\s*)$/, '이죠$1')
+            .replace(/됩니다([.!]?\s*)$/, '되죠$1')
+            .replace(/있습니다([.!]?\s*)$/, '있죠$1')
+        } else {
+          lines[i] = lines[i]
+            .replace(/입니다([.!]?\s*)$/, '인데요$1')
+            .replace(/됩니다([.!]?\s*)$/, '되는데요$1')
+            .replace(/있습니다([.!]?\s*)$/, '있는데요$1')
+        }
+        consecutive = 0 // 리셋
+      }
+    } else {
+      consecutive = 0
+    }
+  }
+
+  return lines.join('\n')
+}
+
+// ============================================================
 // 3. 형태소 기반 키워드 빈도 교정
 // ============================================================
 
@@ -582,6 +628,9 @@ export function postProcess(content: string, options: PostProcessOptions): strin
 
   // Step 2: ~요 금지 어미 치환 (안전 패턴만)
   result = sanitizeForbiddenEndings(result, options.writingMode)
+
+  // Step 2.5: 정보성 모드 ~입니다 3연속 자동 교정
+  result = breakConsecutiveImnida(result, options.writingMode)
 
   // Step 3: 형태소 기반 키워드 빈도 제한
   if (options.region && options.mainKeyword) {

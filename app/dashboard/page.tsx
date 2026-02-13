@@ -116,7 +116,7 @@ export default function DashboardPage() {
       {/* 버전 표시 */}
       <div className="mb-4 text-center">
         <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-gray-100 text-gray-500 text-xs font-mono rounded-full">
-          v3.4.0 — 글자수 상한 해제 + 이미지 3단계 서술 (판독→의미→맥락)
+          v3.5.0 — 정보성 모드 전면 개선 (4막 스토리텔링 + 몰입장치 + AI방지)
         </span>
       </div>
 
