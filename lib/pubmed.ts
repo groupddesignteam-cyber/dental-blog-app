@@ -1,8 +1,9 @@
 /**
  * PubMed E-utilities 클라이언트
- * - 한국어 치과 키워드 → 영문 PubMed 쿼리 변환
+ * - 한국어 의료 키워드 → 영문 PubMed 쿼리 변환
  * - esearch (검색) + efetch (상세) 2단계
  * - regex 기반 XML 파싱 (외부 라이브러리 없음)
+ * - 지원 과목: 치과, 비뇨기과, 정형외과
  */
 
 export interface PaperCitation {
@@ -15,53 +16,112 @@ export interface PaperCitation {
   abstract?: string
 }
 
-// ── 한→영 치과 키워드 매핑 ──
+// ── 한→영 의료 키워드 매핑 (과목별) ──
 
-const DENTAL_KEYWORD_MAP: Record<string, string> = {
-  '임플란트': 'dental implant',
-  '신경치료': 'root canal treatment endodontics',
-  '충치': 'dental caries',
-  '사랑니': 'wisdom tooth third molar',
-  '치아교정': 'orthodontic treatment',
-  '교정': 'orthodontic treatment',
-  '스케일링': 'dental scaling periodontal',
-  '치주치료': 'periodontal treatment',
-  '치주': 'periodontal',
-  '보철': 'dental prosthesis crown',
-  '라미네이트': 'dental veneer laminate',
-  '치아미백': 'tooth whitening bleaching',
-  '미백': 'tooth whitening bleaching',
-  '소아치과': 'pediatric dentistry',
-  '발치': 'tooth extraction',
-  '잇몸치료': 'gingival treatment periodontitis',
-  '잇몸': 'gingival periodontal',
-  '턱관절': 'temporomandibular joint TMJ',
-  '골이식': 'bone graft dental',
-  '상악동거상술': 'sinus lift augmentation',
-  '치아크랙': 'cracked tooth fracture',
-  '크랙': 'cracked tooth fracture',
-  '지르코니아': 'zirconia dental ceramic',
-  '브릿지': 'dental bridge fixed partial denture',
-  '틀니': 'denture removable prosthesis',
-  '레진': 'composite resin restoration',
-  '뼈이식': 'bone graft dental',
-  '치아': 'dental tooth',
-  '어금니': 'molar tooth',
+const MEDICAL_KEYWORD_MAP: Record<string, { en: string; mesh: string }> = {
+  // ── 치과 (Dentistry) ──
+  '임플란트': { en: 'dental implant', mesh: 'dental' },
+  '신경치료': { en: 'root canal treatment endodontics', mesh: 'dental' },
+  '충치': { en: 'dental caries', mesh: 'dental' },
+  '사랑니': { en: 'wisdom tooth third molar', mesh: 'dental' },
+  '치아교정': { en: 'orthodontic treatment', mesh: 'dental' },
+  '교정': { en: 'orthodontic treatment', mesh: 'dental' },
+  '스케일링': { en: 'dental scaling periodontal', mesh: 'dental' },
+  '치주치료': { en: 'periodontal treatment', mesh: 'dental' },
+  '치주': { en: 'periodontal', mesh: 'dental' },
+  '보철': { en: 'dental prosthesis crown', mesh: 'dental' },
+  '라미네이트': { en: 'dental veneer laminate', mesh: 'dental' },
+  '치아미백': { en: 'tooth whitening bleaching', mesh: 'dental' },
+  '미백': { en: 'tooth whitening bleaching', mesh: 'dental' },
+  '소아치과': { en: 'pediatric dentistry', mesh: 'dental' },
+  '발치': { en: 'tooth extraction', mesh: 'dental' },
+  '잇몸치료': { en: 'gingival treatment periodontitis', mesh: 'dental' },
+  '잇몸': { en: 'gingival periodontal', mesh: 'dental' },
+  '턱관절': { en: 'temporomandibular joint TMJ', mesh: 'dental' },
+  '골이식': { en: 'bone graft dental', mesh: 'dental' },
+  '상악동거상술': { en: 'sinus lift augmentation', mesh: 'dental' },
+  '치아크랙': { en: 'cracked tooth fracture', mesh: 'dental' },
+  '크랙': { en: 'cracked tooth fracture', mesh: 'dental' },
+  '지르코니아': { en: 'zirconia dental ceramic', mesh: 'dental' },
+  '브릿지': { en: 'dental bridge fixed partial denture', mesh: 'dental' },
+  '틀니': { en: 'denture removable prosthesis', mesh: 'dental' },
+  '레진': { en: 'composite resin restoration', mesh: 'dental' },
+  '뼈이식': { en: 'bone graft dental', mesh: 'dental' },
+  '치아': { en: 'dental tooth', mesh: 'dental' },
+  '어금니': { en: 'molar tooth', mesh: 'dental' },
+
+  // ── 비뇨기과 (Urology) ──
+  '전립선': { en: 'prostate', mesh: 'urology' },
+  '전립선비대증': { en: 'benign prostatic hyperplasia BPH', mesh: 'urology' },
+  '전립선암': { en: 'prostate cancer', mesh: 'urology' },
+  '요로결석': { en: 'urolithiasis kidney stone', mesh: 'urology' },
+  '신장결석': { en: 'kidney stone nephrolithiasis', mesh: 'urology' },
+  '방광염': { en: 'cystitis urinary tract infection', mesh: 'urology' },
+  '요로감염': { en: 'urinary tract infection UTI', mesh: 'urology' },
+  '혈뇨': { en: 'hematuria', mesh: 'urology' },
+  '과민성방광': { en: 'overactive bladder OAB', mesh: 'urology' },
+  '요실금': { en: 'urinary incontinence', mesh: 'urology' },
+  '발기부전': { en: 'erectile dysfunction', mesh: 'urology' },
+  '남성불임': { en: 'male infertility', mesh: 'urology' },
+  '정계정맥류': { en: 'varicocele', mesh: 'urology' },
+  '방광암': { en: 'bladder cancer', mesh: 'urology' },
+  '신장암': { en: 'renal cell carcinoma kidney cancer', mesh: 'urology' },
+  '요관': { en: 'ureter ureteral', mesh: 'urology' },
+  '포경수술': { en: 'circumcision', mesh: 'urology' },
+  '전립선염': { en: 'prostatitis', mesh: 'urology' },
+  '야뇨증': { en: 'nocturnal enuresis nocturia', mesh: 'urology' },
+  '비뇨기': { en: 'urological', mesh: 'urology' },
+
+  // ── 정형외과 (Orthopedics) ──
+  '무릎': { en: 'knee', mesh: 'orthopedics' },
+  '무릎관절': { en: 'knee joint osteoarthritis', mesh: 'orthopedics' },
+  '인공관절': { en: 'total joint replacement arthroplasty', mesh: 'orthopedics' },
+  '슬관절': { en: 'knee arthroplasty', mesh: 'orthopedics' },
+  '고관절': { en: 'hip joint replacement', mesh: 'orthopedics' },
+  '십자인대': { en: 'anterior cruciate ligament ACL', mesh: 'orthopedics' },
+  '반월상연골': { en: 'meniscus meniscal tear', mesh: 'orthopedics' },
+  '연골손상': { en: 'cartilage injury chondral', mesh: 'orthopedics' },
+  '회전근개': { en: 'rotator cuff tear', mesh: 'orthopedics' },
+  '어깨': { en: 'shoulder', mesh: 'orthopedics' },
+  '오십견': { en: 'frozen shoulder adhesive capsulitis', mesh: 'orthopedics' },
+  '척추': { en: 'spine spinal', mesh: 'orthopedics' },
+  '허리디스크': { en: 'lumbar disc herniation', mesh: 'orthopedics' },
+  '목디스크': { en: 'cervical disc herniation', mesh: 'orthopedics' },
+  '디스크': { en: 'disc herniation', mesh: 'orthopedics' },
+  '척추관협착증': { en: 'spinal stenosis', mesh: 'orthopedics' },
+  '골절': { en: 'fracture', mesh: 'orthopedics' },
+  '손목터널증후군': { en: 'carpal tunnel syndrome', mesh: 'orthopedics' },
+  '테니스엘보': { en: 'lateral epicondylitis tennis elbow', mesh: 'orthopedics' },
+  '골다공증': { en: 'osteoporosis', mesh: 'orthopedics' },
+  '관절염': { en: 'arthritis osteoarthritis', mesh: 'orthopedics' },
+  '류마티스': { en: 'rheumatoid arthritis', mesh: 'orthopedics' },
+  '족저근막염': { en: 'plantar fasciitis', mesh: 'orthopedics' },
+  '아킬레스건': { en: 'achilles tendon', mesh: 'orthopedics' },
+  '통풍': { en: 'gout', mesh: 'orthopedics' },
+  '근막통증': { en: 'myofascial pain syndrome', mesh: 'orthopedics' },
+  '정형외과': { en: 'orthopedic', mesh: 'orthopedics' },
 }
 
 const PUBMED_BASE = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils'
 
 // ── 키워드 변환 ──
 
-function translateKeyword(koreanTopic: string): string {
+function translateKeyword(koreanTopic: string): { en: string; mesh: string } {
   // 정확히 매칭되는 키워드 찾기
-  for (const [kr, en] of Object.entries(DENTAL_KEYWORD_MAP)) {
+  for (const [kr, mapping] of Object.entries(MEDICAL_KEYWORD_MAP)) {
     if (koreanTopic.includes(kr)) {
-      return en
+      return mapping
     }
   }
-  // 매칭 안되면 원본 그대로 (PubMed가 일부 한국어 인덱싱)
-  return koreanTopic
+  // 매칭 안되면 원본 그대로 + MeSH 없이 일반 검색
+  return { en: koreanTopic, mesh: '' }
+}
+
+// MeSH 필터 매핑
+const MESH_FILTERS: Record<string, string> = {
+  dental: 'dentistry[MeSH]',
+  urology: 'urology[MeSH]',
+  orthopedics: 'orthopedics[MeSH]',
 }
 
 // ── PubMed 검색 ──
@@ -70,8 +130,9 @@ export async function searchPubMed(
   topic: string,
   limit: number = 5
 ): Promise<PaperCitation[]> {
-  const englishTerm = translateKeyword(topic)
-  const query = `(${englishTerm}[TIAB]) AND dental[MeSH] AND ("last 10 years"[PDat])`
+  const { en: englishTerm, mesh } = translateKeyword(topic)
+  const meshFilter = mesh && MESH_FILTERS[mesh] ? ` AND ${MESH_FILTERS[mesh]}` : ''
+  const query = `(${englishTerm}[TIAB])${meshFilter} AND ("last 10 years"[PDat])`
 
   const apiKey = process.env.PUBMED_API_KEY || ''
 
