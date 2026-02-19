@@ -58,15 +58,16 @@ const FORBIDDEN_REPLACEMENTS: Record<string, string> = {
   '공유': '안내',
   '너무': '매우',
   '무척': '상당히',
-  '불안': '우려',
   '해결': '개선',
   '해소': '완화',
   '해주': '도와드리',
   '해보': '살펴보',
   '해본': '겪어본',
   '과다': '과잉',
-  // '고민', '힘들', '불편': 활용형이 다양해서 CONTEXT_REPLACEMENTS로 이동
-  // '경험', '만족': 문맥 타는 단어는 단순 치환 제외
+  '평생': '오랫동안',
+  '정말': '실제로',
+  '꼭': '반드시',
+  // '고민', '힘들', '불편', '불안', '경험': CONTEXT_REPLACEMENTS로 이동
 }
 
 // 활용형별 정밀 치환 (단순 대체 시 문법 오류 발생하는 단어)
@@ -101,6 +102,25 @@ const CONTEXT_REPLACEMENTS: [RegExp, string][] = [
   [/경험해/g, '체감해'],
   [/경험한/g, '겪은'],
   [/경험(?=[,.\s!?\n]|$)/g, '체험'], // Fallback noun
+  // 불편- 활용형
+  [/불편감함/g, '부담감'],        // LLM이 만드는 이중 접미사 오류 방지
+  [/불편감/g, '부담감'],
+  [/불편함/g, '부담감'],
+  [/불편하/g, '부담되'],
+  [/불편해/g, '부담돼'],
+  [/불편을/g, '부담을'],
+  [/불편이/g, '부담이'],
+  [/불편(?=[,.\s!?\n]|$)/g, '부담'],
+  // 불안- 활용형 (복합어 "불안정" 보호를 위해 CONTEXT에서 처리)
+  [/불안감/g, '우려감'],
+  [/불안하/g, '우려되'],
+  [/불안해/g, '우려돼'],
+  [/불안을/g, '우려를'],
+  [/불안이/g, '우려가'],
+  [/불안(?=[,.\s!?\n]|$)/g, '우려'],
+  // LLM이 생성하는 부자연스러운 임플란트 동의어 정규화
+  [/인공자연치/g, '임플란트'],
+  [/인공영구치/g, '임플란트'],
 ]
 
 /** 금칙어를 안전한 대체어로 치환 (독립 단어 기준, 한글 조사 보정 포함) */
@@ -109,7 +129,7 @@ export function sanitizeForbiddenWords(content: string): string {
 
   // Step A: 활용형별 정밀 치환 (문법 오류 방지)
   for (const [pattern, replacement] of CONTEXT_REPLACEMENTS) {
-    result = result.replace(pattern, replacement)
+    result = result.replace(pattern, replacement as string)
   }
 
   // Step B: 단순 1:1 치환 (독립 단어 + 조사 보정)
@@ -163,6 +183,10 @@ const MEDICAL_REPLACEMENTS: [RegExp, string][] = [
   [/환자분께서/g, '이런 경우'],
   [/환자\s*입장에서/g, '시술을 받으시는 분 입장에서'],
   [/환자분이/g, '해당되시는 분이'],
+  [/환자분들이/g, '분들이'],
+  [/환자분들의/g, '분들의'],
+  [/환자분들/g, '분들'],
+  [/환자분/g, '해당되시는 분'],
   // 효과 보장/추천 표현
   [/현명한\s*선택/g, '적합한 방법'],
   // 비표준 용어 치환
@@ -224,6 +248,8 @@ export function sanitizeForbiddenEndings(content: string, writingMode?: string):
     [/할게요(?=[.!?\s\n]|$)/g, '하겠습니다'],
     [/볼게요(?=[.!?\s\n]|$)/g, '보겠습니다'],
     [/줄게요(?=[.!?\s\n]|$)/g, '드리겠습니다'],
+    // 거든요: stem+거든요 → stem+기 때문이죠 (동일 어간 호환)
+    [/거든요(?=[.!?\s\n]|$)/g, '기 때문이죠'],
   ]
 
   // 임상 모드에서만 "인데요" 제거 (정보성 모드에서는 10% 허용)
@@ -417,8 +443,13 @@ export function enforceMorphemeLimit(
  * - MainKeyword와 겹치는 구간은 보호
  */
 export function rotateSynonyms(content: string, options: PostProcessOptions): string {
-  let result = content
   const { region, mainKeyword, clinicName } = options
+
+  // 0. 해시태그 영역 분리 (동의어 회전 제외)
+  // 해시태그 줄: #키워드 #키워드 형태 (## 마크다운 헤딩과 구분)
+  const hashtagMatch = content.match(/(\n#(?!#)[^\n]+)\s*$/)
+  const hashtagSection = hashtagMatch ? hashtagMatch[1] : ''
+  let result = hashtagSection ? content.slice(0, content.length - hashtagSection.length) : content
 
   // 1. 보호 구간 식별 (Main Keyword, Clinic Name)
   const protectedRanges: [number, number][] = []
@@ -440,13 +471,15 @@ export function rotateSynonyms(content: string, options: PostProcessOptions): st
     )
   }
 
-  // 2. 예외 단어 설정
+  // 2. 예외 단어 설정 (메인키워드 개별 단어도 보호)
+  const mainKeywordParts = mainKeyword ? mainKeyword.split(/\s+/) : []
   const exceptions = new Set([
     region,
     clinicName,
     '치과', // 명시적 제외
     '원장', // 필요 시 추가
-    ...inputKeywords
+    ...inputKeywords,
+    ...mainKeywordParts, // "강남 임플란트" → "강남", "임플란트" 각각 보호
   ].filter(Boolean))
 
   // 3. 사전 순회 및 교체
@@ -509,7 +542,8 @@ export function rotateSynonyms(content: string, options: PostProcessOptions): st
     }
   }
 
-  return result
+  // 해시태그 영역 복원 (동의어 회전 미적용)
+  return result + hashtagSection
 }
 
 // ============================================================
@@ -641,6 +675,54 @@ export function enforceRegionFrequency(content: string, region: string): string 
 }
 
 // ============================================================
+// 강조부사 빈도 제한
+// ============================================================
+
+const EMPHASIS_ADVERB_MAP: Record<string, string[]> = {
+  '가장': ['더욱', '한층', '매우'],
+  '특히': ['그중에서도', '주목할 점은', '이 가운데'],
+  '무엇보다': ['중요한 것은', '핵심은', '우선적으로'],
+}
+
+/** 강조부사를 글 전체에서 각 2회 이하로 제한 (3번째부터 대체어로 치환) */
+function limitEmphasisAdverbs(content: string): string {
+  let result = content
+
+  for (const [adverb, replacements] of Object.entries(EMPHASIS_ADVERB_MAP)) {
+    const regex = new RegExp(adverb, 'g')
+    const matches = [...result.matchAll(regex)]
+
+    if (matches.length <= 2) continue
+
+    // 3번째부터 뒤에서 교체 (인덱스 밀림 방지)
+    const toReplace = matches.slice(2)
+    for (let i = toReplace.length - 1; i >= 0; i--) {
+      const match = toReplace[i]
+      if (match.index === undefined) continue
+      const replacement = replacements[i % replacements.length]
+      result = result.slice(0, match.index) + replacement + result.slice(match.index + adverb.length)
+    }
+  }
+
+  return result
+}
+
+// ============================================================
+// 섹션 제목(##) 줄바꿈 보장
+// ============================================================
+
+/** ## 제목 앞뒤에 빈 줄이 있는지 확인하고, 없으면 추가 */
+function ensureHeadingLineBreaks(content: string): string {
+  // ## 가 줄 중간에 등장하면 (예: "좋습니다.## 제목") 줄바꿈 삽입
+  let result = content.replace(/([^\n#])(##\s)/g, '$1\n\n$2')
+  // ## 앞에 줄바꿈 1개만 있으면 빈 줄 추가
+  result = result.replace(/([^\n])\n(##\s)/g, '$1\n\n$2')
+  // ## 줄 뒤에 빈 줄 없으면 추가
+  result = result.replace(/(##[^\n]+)\n([^\n#])/g, '$1\n\n$2')
+  return result
+}
+
+// ============================================================
 // 메인 후처리 파이프라인
 // ============================================================
 
@@ -675,6 +757,9 @@ export function postProcess(content: string, options: PostProcessOptions): strin
   // Step 4: 동의어 회전 (전체 6회 제한)
   result = rotateSynonyms(result, options)
 
+  // Step 4.5: 강조부사 빈도 제한 (각 2회 이하)
+  result = limitEmphasisAdverbs(result)
+
   // Step 5: 형태소(지역명) 빈도 및 분포 보장 (7회 고정)
   if (options.region) {
     result = enforceRegionFrequency(result, options.region)
@@ -682,6 +767,9 @@ export function postProcess(content: string, options: PostProcessOptions): strin
 
   // Step 6: 문장 종결 후 줄바꿈 보장 ('~다.' 뒤 다음 문장은 새 줄)
   result = ensureSentenceLineBreaks(result)
+
+  // Step 7: 섹션 제목(##) 앞뒤 줄바꿈 보장
+  result = ensureHeadingLineBreaks(result)
 
   return result
 }
