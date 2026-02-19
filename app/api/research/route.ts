@@ -12,9 +12,9 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    if (!process.env.GEMINI_API_KEY) {
+    if (!process.env.PERPLEXITY_API_KEY && !process.env.GEMINI_API_KEY) {
       return Response.json(
-        { error: 'Gemini API 키가 설정되지 않았습니다.' },
+        { error: 'Perplexity 또는 Gemini API 키가 설정되지 않았습니다.' },
         { status: 500 }
       )
     }
