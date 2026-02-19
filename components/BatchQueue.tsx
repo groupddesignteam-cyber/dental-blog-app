@@ -1475,7 +1475,11 @@ export default function BatchQueue({ onResultsReady }: Props) {
                 </div>
                 {researchResult && (
                   <p className="text-xs text-green-600 mt-1">
-                    📎 논문 {researchResult.paperSummaries.length}건 + 기존글 {researchResult.ragPostCount}건 참조 완료
+                    {researchResult.source === 'perplexity' ? '🌐' : researchResult.source === 'gemini' ? '🤖' : '📄'}{' '}
+                    논문 {researchResult.paperSummaries.length}건
+                    {researchResult.webCitations.length > 0 && ` + 웹출처 ${researchResult.webCitations.length}건`}
+                    {researchResult.ragPostCount > 0 && ` + 기존글 ${researchResult.ragPostCount}건`}
+                    {' '}참조 완료
                   </p>
                 )}
               </div>

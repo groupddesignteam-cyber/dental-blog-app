@@ -116,7 +116,7 @@ export default function DashboardPage() {
       {/* 버전 표시 */}
       <div className="mb-4 text-center">
         <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-gray-100 text-gray-500 text-xs font-mono rounded-full">
-          v3.7.1 — 그 외 병의원 직접 입력 + 과목별 치료 목록
+          v3.8.0 — Perplexity 웹 검색 리서치 + 금칙어 정밀치환
         </span>
       </div>
 

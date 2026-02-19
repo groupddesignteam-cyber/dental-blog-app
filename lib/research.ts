@@ -1,5 +1,5 @@
 // 정보성 모드 리서치 CC 자동 생성
-// PubMed(학술) + RAG(기존글) + Gemini Flash(LLM 지식) 융합
+// Perplexity sonar(웹 검색 기반) 우선 → Gemini Flash fallback → PubMed-only fallback
 
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { searchPubMed, PaperCitation } from '@/lib/pubmed'
@@ -9,7 +9,58 @@ import { ResearchResult } from '@/types'
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '')
 
-// ── Gemini Flash 리서치 프롬프트 ──
+// ── Perplexity sonar API 호출 ──
+interface PerplexityResponse {
+  choices: {
+    message: {
+      role: string
+      content: string
+    }
+  }[]
+  citations?: string[]
+}
+
+async function callPerplexitySonar(
+  systemPrompt: string,
+  userPrompt: string
+): Promise<{ text: string; citations: string[] }> {
+  const apiKey = process.env.PERPLEXITY_API_KEY
+  if (!apiKey) {
+    throw new Error('PERPLEXITY_API_KEY not configured')
+  }
+
+  const res = await fetch('https://api.perplexity.ai/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'sonar',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      temperature: 0.2,
+      max_tokens: 2000,
+      search_recency_filter: 'year',
+      return_citations: true,
+    }),
+  })
+
+  if (!res.ok) {
+    const errText = await res.text()
+    throw new Error(`Perplexity API error ${res.status}: ${errText}`)
+  }
+
+  const data: PerplexityResponse = await res.json()
+  return {
+    text: data.choices?.[0]?.message?.content || '',
+    citations: data.citations || [],
+  }
+}
+
+// ── 리서치 프롬프트 (Perplexity + Gemini 공용) ──
 function buildResearchPrompt(
   topic: string,
   papers: PaperCitation[],
@@ -19,13 +70,13 @@ function buildResearchPrompt(
     ? papers.map((p, i) =>
         `[${i + 1}] ${p.authors}. "${p.title}" (${p.journal}, ${p.year}).${p.abstract ? `\n   요약: ${p.abstract}` : ''}`
       ).join('\n')
-    : '(PubMed 검색 결과 없음 — LLM 지식 기반으로 작성)'
+    : '(PubMed 검색 결과 없음 — 웹 검색 기반으로 작성)'
 
   const ragContext = ragPosts.length > 0
     ? `기존 유사 글 ${ragPosts.length}건 발견 (주제: ${ragPosts.map(p => p.topic).join(', ')})`
     : '(기존 유사 글 없음)'
 
-  return `당신은 치과 전문 리서치 어시스턴트입니다.
+  return `당신은 의료 전문 리서치 어시스턴트입니다.
 아래 주제에 대해 블로그 글 작성을 위한 리서치 브리프를 한국어로 작성해주세요.
 
 ## 주제: ${topic}
@@ -40,8 +91,9 @@ ${ragContext}
 
 [KEY_FACTS]
 - 구체적 수치/통계를 포함한 핵심 사실 5~7개
-- 출처가 있으면 (PubMed) 표기, 없으면 (치과학 일반) 표기
-- 예: "임플란트 10년 생존율은 95~98%로 보고됨 (PubMed)"
+- 반드시 신뢰할 수 있는 출처 기반 정보만 포함
+- 출처가 있으면 (출처명) 표기
+- 예: "임플란트 10년 생존율은 95~98%로 보고됨 (대한치과의사협회)"
 
 [MISCONCEPTIONS]
 - 일반인이 흔히 가지는 오해 3~5개
@@ -60,7 +112,7 @@ ${papers.length > 0
 
 주의사항:
 - 반드시 한국어로 작성
-- 수치와 통계는 최대한 구체적으로
+- 수치와 통계는 출처가 명확한 것만 포함 (불확실한 수치 절대 금지)
 - 의료법 위반 표현 (효과 보장, 최고/최첨단 등) 절대 금지
 - 각 섹션은 [SECTION_NAME] 마커로 시작`
 }
@@ -70,7 +122,9 @@ function parseResearchResponse(
   rawText: string,
   topic: string,
   papers: PaperCitation[],
-  ragPostCount: number
+  ragPostCount: number,
+  webCitations: string[],
+  source: ResearchResult['source']
 ): ResearchResult {
   const result: ResearchResult = {
     topic,
@@ -78,8 +132,10 @@ function parseResearchResponse(
     misconceptions: [],
     faqs: [],
     paperSummaries: [],
+    webCitations,
     ragPostCount,
     formattedCC: '',
+    source,
   }
 
   // 섹션별 파싱
@@ -157,7 +213,9 @@ function extractBulletItems(text: string): string[] {
 function formatResearchCC(result: ResearchResult): string {
   const parts: string[] = []
 
-  parts.push(`📚 리서치: ${result.topic}`)
+  const sourceLabel = result.source === 'perplexity' ? '🌐 Perplexity'
+    : result.source === 'gemini' ? '🤖 Gemini' : '📄 PubMed'
+  parts.push(`📚 리서치: ${result.topic} (${sourceLabel})`)
   parts.push('')
 
   if (result.keyFacts.length > 0) {
@@ -193,6 +251,14 @@ function formatResearchCC(result: ResearchResult): string {
     parts.push('')
   }
 
+  if (result.webCitations.length > 0) {
+    parts.push('🔗 웹 출처:')
+    for (let i = 0; i < Math.min(result.webCitations.length, 5); i++) {
+      parts.push(`[${i + 1}] ${result.webCitations[i]}`)
+    }
+    parts.push('')
+  }
+
   if (result.ragPostCount > 0) {
     parts.push(`📝 기존 유사글 ${result.ragPostCount}건 참조 가능`)
   }
@@ -221,31 +287,59 @@ export async function generateResearchCC(
 
     console.log(`[Research] PubMed: ${papers.length} papers, RAG: ${ragPosts.length} posts`)
 
-    // 2. Gemini Flash로 리서치 브리프 생성
+    // 2. LLM으로 리서치 브리프 생성 (Perplexity → Gemini → Fallback)
     const prompt = buildResearchPrompt(topic, papers, ragPosts)
+    const systemPrompt = '당신은 의료 전문 리서치 전문가입니다. 한국어로 응답하세요. 지정된 섹션 형식을 정확히 따르세요. 수치/통계는 출처가 확인된 것만 사용하세요.'
 
     let rawText = ''
-    try {
-      const model = genAI.getGenerativeModel({
-        model: 'gemini-2.0-flash',
-      })
-      const llmResult = await model.generateContent({
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        systemInstruction: {
-          role: 'user',
-          parts: [{ text: '당신은 치과 리서치 전문가입니다. 한국어로 응답하세요. 지정된 섹션 형식을 정확히 따르세요.' }]
-        },
-      })
-      rawText = llmResult.response.text()
-      console.log(`[Research] Gemini response: ${rawText.length} chars`)
-    } catch (error) {
-      console.error('[Research] Gemini call failed:', error)
-      // Gemini 실패 시 PubMed 결과만으로 기본 리서치 생성
+    let webCitations: string[] = []
+    let source: ResearchResult['source'] = 'fallback'
+
+    // Strategy A: Perplexity sonar (웹 검색 기반, 출처 포함)
+    if (process.env.PERPLEXITY_API_KEY) {
+      try {
+        console.log('[Research] Trying Perplexity sonar...')
+        const pplxResult = await callPerplexitySonar(systemPrompt, prompt)
+        rawText = pplxResult.text
+        webCitations = pplxResult.citations
+        source = 'perplexity'
+        console.log(`[Research] Perplexity response: ${rawText.length} chars, ${webCitations.length} citations`)
+      } catch (error) {
+        console.error('[Research] Perplexity call failed:', error)
+      }
+    }
+
+    // Strategy B: Gemini Flash fallback (Perplexity 실패 또는 미설정 시)
+    if (!rawText && process.env.GEMINI_API_KEY) {
+      try {
+        console.log('[Research] Falling back to Gemini Flash...')
+        const model = genAI.getGenerativeModel({
+          model: 'gemini-2.0-flash',
+        })
+        const llmResult = await model.generateContent({
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+          systemInstruction: {
+            role: 'user',
+            parts: [{ text: systemPrompt }]
+          },
+        })
+        rawText = llmResult.response.text()
+        source = 'gemini'
+        console.log(`[Research] Gemini response: ${rawText.length} chars`)
+      } catch (error) {
+        console.error('[Research] Gemini call failed:', error)
+      }
+    }
+
+    // Strategy C: PubMed-only fallback (LLM 모두 실패 시)
+    if (!rawText) {
+      console.log('[Research] All LLMs failed, using PubMed-only fallback')
       rawText = buildFallbackResponse(topic, papers)
+      source = 'fallback'
     }
 
     // 3. 응답 파싱
-    const result = parseResearchResponse(rawText, topic, papers, ragPosts.length)
+    const result = parseResearchResponse(rawText, topic, papers, ragPosts.length, webCitations, source)
 
     // 4. CC 포맷 생성
     result.formattedCC = formatResearchCC(result)
@@ -254,7 +348,7 @@ export async function generateResearchCC(
   }, CACHE_TTL.KEYWORD) // 30분 캐시
 }
 
-// ── Gemini 실패 시 Fallback ──
+// ── LLM 모두 실패 시 Fallback ──
 function buildFallbackResponse(topic: string, papers: PaperCitation[]): string {
   const lines: string[] = []
 

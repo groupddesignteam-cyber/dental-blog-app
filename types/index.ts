@@ -126,8 +126,10 @@ export interface ResearchResult {
     keyFinding: string
     pmid: string
   }[]
+  webCitations: string[]       // Perplexity 웹 검색 출처 URL
   ragPostCount: number
   formattedCC: string
+  source: 'perplexity' | 'gemini' | 'fallback'  // 리서치 생성 소스
 }
 
 export interface GenerateResult {
