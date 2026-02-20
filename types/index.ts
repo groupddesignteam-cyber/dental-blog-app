@@ -132,6 +132,50 @@ export interface ResearchResult {
   source: 'perplexity' | 'gemini' | 'fallback'  // 리서치 생성 소스
 }
 
+// 이미지 편집기 도구 타입
+export type EditorTool = 'select' | 'arrow' | 'dottedLine' | 'text' | 'ellipse' | 'freeLine' | 'crop' | 'blurBrush' | 'mosaicBrush'
+
+// 이미지 편집기 어노테이션 아이템
+export interface AnnotationItem {
+  id: string
+  type:
+    | 'arrow'
+    | 'dottedLine'
+    | 'text'
+    | 'logo'
+    | 'ellipse'
+    | 'freeLine'
+    | 'privacyBlur'
+    | 'privacyMosaic'
+  x: number
+  y: number
+  points?: number[]        // arrow/dottedLine: [x1,y1,x2,y2]
+  text?: string
+  fontSize?: number
+  stroke?: string
+  fill?: string
+  strokeWidth?: number
+  rotation?: number
+  scaleX?: number
+  scaleY?: number
+  width?: number           // logo
+  height?: number          // logo
+  imageUrl?: string        // logo base64
+  dashLength?: number      // 점선 간격 (선 길이)
+  dashGap?: number         // 점선 간격 (빈 공간)
+  opacity?: number         // 투명도 0~1
+  name?: string            // 레이어 패널 표시명
+}
+
+// GIF 내보내기 설정
+export interface GifExportConfig {
+  mode: 'beforeAfter' | 'annotationBlink' | 'annotationMotion'
+  delay: number            // ms (기본 1000)
+  loops: number            // 0 = 무한 (기본 0)
+  beforeImage?: string     // base64 (전후 비교 모드)
+  afterImage?: string      // base64 (전후 비교 모드)
+}
+
 export interface GenerateResult {
   title: string
   content: string
