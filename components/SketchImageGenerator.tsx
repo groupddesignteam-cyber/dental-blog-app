@@ -459,8 +459,8 @@ const ARCH_CENTERLINE_PROFILES: Record<
 const DENTAL_TEMPLATES: DentalTemplate[] = [
   {
     id: 'closed-mouth',
-    label: 'Closed-mouth',
-    description: 'Closed-mouth with natural occlusion and no visible tongue space.',
+    label: '다문입',
+    description: '자연스러운 교합 상태로 혀 노출이 거의 없는 기본 템플릿입니다.',
     marginX: 0.1,
     upperY: 0.24,
     lowerY: 0.56,
@@ -480,8 +480,8 @@ const DENTAL_TEMPLATES: DentalTemplate[] = [
   },
   {
     id: 'partly-open',
-    label: 'Partly Open',
-    description: 'Mild vertical opening, front gap visible for focused annotation.',
+    label: '약간 벌린입',
+    description: '전치부 간격이 살짝 보이는 상태로 위치 지정에 적합합니다.',
     marginX: 0.095,
     upperY: 0.2,
     lowerY: 0.6,
@@ -501,8 +501,8 @@ const DENTAL_TEMPLATES: DentalTemplate[] = [
   },
   {
     id: 'slightly-open',
-    label: 'Slightly Open',
-    description: 'Conservative mouth opening with a narrow oral gap for focused anterior work.',
+    label: '살짝 벌린입',
+    description: '구강 간격이 좁게 보이는 보수적 개구 템플릿입니다.',
     marginX: 0.095,
     upperY: 0.205,
     lowerY: 0.58,
@@ -522,8 +522,8 @@ const DENTAL_TEMPLATES: DentalTemplate[] = [
   },
   {
     id: 'semi-open',
-    label: 'Semi Open',
-    description: 'Balanced partial opening for medium-gap frontal treatment references.',
+    label: '중간 개구',
+    description: '중간 정도 간격으로 전치부와 구치부를 균형 있게 확인합니다.',
     marginX: 0.095,
     upperY: 0.21,
     lowerY: 0.59,
@@ -543,8 +543,8 @@ const DENTAL_TEMPLATES: DentalTemplate[] = [
   },
   {
     id: 'wide-open',
-    label: 'Wide Open',
-    description: 'Wide oral opening with larger gap for molars and posterior details.',
+    label: '넓게 벌린입',
+    description: '구강을 넓게 벌린 상태로 구치부 확인에 유리합니다.',
     marginX: 0.09,
     upperY: 0.15,
     lowerY: 0.65,
@@ -564,8 +564,8 @@ const DENTAL_TEMPLATES: DentalTemplate[] = [
   },
   {
     id: 'very-open',
-    label: 'Very Open',
-    description: 'Expanded opening for molar and posterior area coverage.',
+    label: '크게 벌린입',
+    description: '후방 치아 영역까지 크게 확보한 개구 템플릿입니다.',
     marginX: 0.082,
     upperY: 0.13,
     lowerY: 0.67,
@@ -585,8 +585,8 @@ const DENTAL_TEMPLATES: DentalTemplate[] = [
   },
   {
     id: 'ultra-open',
-    label: 'Ultra Open',
-    description: 'Very wide opening template for maximum posterior and tongue-space visibility.',
+    label: '최대 개구',
+    description: '구치부와 혀 주변 공간까지 최대 범위로 확인하는 템플릿입니다.',
     marginX: 0.085,
     upperY: 0.14,
     lowerY: 0.67,
@@ -606,8 +606,8 @@ const DENTAL_TEMPLATES: DentalTemplate[] = [
   },
   {
     id: 'upper-focus',
-    label: 'Upper Focus',
-    description: 'Upper arch focus template with stronger upper emphasis and moderate lower context.',
+    label: '상악 집중',
+    description: '상악 치열을 중심으로 강조해 보여주는 템플릿입니다.',
     marginX: 0.11,
     upperY: 0.23,
     lowerY: 0.58,
@@ -627,8 +627,8 @@ const DENTAL_TEMPLATES: DentalTemplate[] = [
   },
   {
     id: 'lower-focus',
-    label: 'Lower Focus',
-    description: 'Lower arch focus template with clearer lower visibility and reduced upper emphasis.',
+    label: '하악 집중',
+    description: '하악 치열 가시성을 높여 병변 위치 표시에 적합합니다.',
     marginX: 0.11,
     upperY: 0.2,
     lowerY: 0.62,
@@ -648,8 +648,8 @@ const DENTAL_TEMPLATES: DentalTemplate[] = [
   },
   {
     id: 'anterior-focus',
-    label: 'Anterior Focus',
-    description: 'Front-tooth focused view ideal for incisors and canine edits.',
+    label: '전치부 집중',
+    description: '앞니 중심 시야로 절치·견치 부위 표현에 최적화됩니다.',
     marginX: 0.1,
     upperY: 0.22,
     lowerY: 0.56,
@@ -669,8 +669,8 @@ const DENTAL_TEMPLATES: DentalTemplate[] = [
   },
   {
     id: 'molar-focus',
-    label: 'Molar Focus',
-    description: 'Posterior molar-focused layout for chewing area treatment simulation.',
+    label: '구치부 집중',
+    description: '어금니 중심 배치로 구치부 병변 설명에 적합합니다.',
     marginX: 0.1,
     upperY: 0.24,
     lowerY: 0.56,
@@ -690,8 +690,8 @@ const DENTAL_TEMPLATES: DentalTemplate[] = [
   },
   {
     id: 'full-open',
-    label: 'Full Open',
-    description: 'Fully open profile with consistent visibility and expanded posterior gap.',
+    label: '전악 개구',
+    description: '상하악을 넓게 보여주는 전체 개구 프로파일입니다.',
     marginX: 0.09,
     upperY: 0.16,
     lowerY: 0.64,
@@ -711,8 +711,8 @@ const DENTAL_TEMPLATES: DentalTemplate[] = [
   },
   {
     id: 'upper-only',
-    label: 'Upper Only',
-    description: 'Only upper jaw context with minimal lower jaw structure in the frame.',
+    label: '상악 단독',
+    description: '상악 중심으로 하악 구조를 최소화해 보여주는 템플릿입니다.',
     marginX: 0.11,
     upperY: 0.23,
     lowerY: 0.9,
@@ -732,8 +732,8 @@ const DENTAL_TEMPLATES: DentalTemplate[] = [
   },
   {
     id: 'lower-only',
-    label: 'Lower Only',
-    description: 'Only lower jaw context with minimal upper jaw structure in the frame.',
+    label: '하악 단독',
+    description: '하악 중심으로 상악 구조를 최소화해 보여주는 템플릿입니다.',
     marginX: 0.11,
     upperY: 0.88,
     lowerY: 0.58,
@@ -871,7 +871,7 @@ const TEMPLATE_CONTROL_PRESETS: Record<TemplateId, TemplateControlDefaults> = {
 const TEMPLATE_GROUPS: TemplateGroup[] = [
   {
     id: 'all',
-    label: 'All Templates',
+    label: '전체',
     templateIds: [
       'closed-mouth',
       'partly-open',
@@ -891,17 +891,17 @@ const TEMPLATE_GROUPS: TemplateGroup[] = [
   },
   {
     id: 'opening',
-    label: 'Opening',
+    label: '개구도',
     templateIds: ['closed-mouth', 'partly-open', 'slightly-open', 'semi-open', 'wide-open', 'very-open', 'ultra-open', 'full-open'],
   },
   {
     id: 'focus',
-    label: 'Focus',
+    label: '부위 집중',
     templateIds: ['upper-focus', 'lower-focus', 'anterior-focus', 'molar-focus'],
   },
   {
     id: 'arch',
-    label: 'Arch',
+    label: '악궁 단독',
     templateIds: ['upper-only', 'lower-only'],
   },
 ]
@@ -2042,7 +2042,7 @@ export default function SketchImageGenerator({ onGenerated }: SketchImageGenerat
                   선택 치아 초기화
                 </button>
                 <span className="text-xs text-gray-500">
-                  Mode: {inputMode === 'tooth-select' ? 'Tooth select mode' : 'Drawing mode'}
+                  모드: {inputMode === 'tooth-select' ? '치아 선택 모드' : '자유 스케치 모드'}
                 </span>
               </div>
               {selectedTeeth.length > 0 ? (
@@ -2249,7 +2249,7 @@ export default function SketchImageGenerator({ onGenerated }: SketchImageGenerat
 
             <div className="grid gap-3 md:grid-cols-3">
               <label className="text-sm">
-                <span className="mb-1 block text-gray-700">Control Scale</span>
+                <span className="mb-1 block text-gray-700">제어 강도</span>
                 <input
                   type="range"
                   min={0.2}
@@ -2263,7 +2263,7 @@ export default function SketchImageGenerator({ onGenerated }: SketchImageGenerat
               </label>
 
               <label className="text-sm">
-                <span className="mb-1 block text-gray-700">Guidance</span>
+                <span className="mb-1 block text-gray-700">프롬프트 강도</span>
                 <input
                   type="range"
                   min={1}
@@ -2277,7 +2277,7 @@ export default function SketchImageGenerator({ onGenerated }: SketchImageGenerat
               </label>
 
               <label className="text-sm">
-                <span className="mb-1 block text-gray-700">Steps</span>
+                <span className="mb-1 block text-gray-700">생성 단계</span>
                 <input
                   type="range"
                   min={8}
@@ -2286,7 +2286,7 @@ export default function SketchImageGenerator({ onGenerated }: SketchImageGenerat
                   onChange={(event) => setNumSteps(Number(event.target.value))}
                   className="w-full"
                 />
-                <span className="text-xs text-gray-500">{numSteps} steps</span>
+                <span className="text-xs text-gray-500">{numSteps} 스텝</span>
               </label>
 
               <label className="text-sm">
