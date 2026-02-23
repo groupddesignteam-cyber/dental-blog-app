@@ -1,7 +1,14 @@
 import { NextAuthOptions } from 'next-auth'
 import CredentialsProvider from 'next-auth/providers/credentials'
+import { createHash } from 'crypto'
+
+const fallbackSecret = createHash('sha256')
+  .update(process.env.NEXTAUTH_URL ?? 'https://dental-blog.vercel.app')
+  .update('fallback-next-auth-secret')
+  .digest('hex')
 
 export const authOptions: NextAuthOptions = {
+  secret: process.env.NEXTAUTH_SECRET ?? fallbackSecret,
   providers: [
     CredentialsProvider({
       name: 'Credentials',
