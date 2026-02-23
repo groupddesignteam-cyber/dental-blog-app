@@ -26,17 +26,29 @@ interface ImageRequest {
   width?: number
   height?: number
   negativePrompt?: string
+  locationHint?: string
   controlScale?: number
   guidanceScale?: number
   numSteps?: number
   seed?: number
   enableSafetyChecker?: boolean
+  requestTimeoutMs?: number
 }
 
 interface ImageGenerateResponse {
   success: boolean
   imageUrl?: string
   error?: string
+  errorCode?: string
+  providersTried?: string[]
+  providerTrace?: ProviderAttempt[]
+}
+
+interface ProviderAttempt {
+  provider: 'gemini' | 'openai' | 'fal'
+  status: 'attempted' | 'failed' | 'succeeded'
+  error?: string
+  latencyMs?: number
 }
 
 interface QueueSubmitResponse {
@@ -90,6 +102,35 @@ interface GeminiResponse {
 
 const DEFAULT_SIZE = { width: 768, height: 768 }
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+const DEFAULT_REQUEST_TIMEOUT_MS = 60000
+
+async function fetchWithTimeout(
+  input: RequestInfo | URL,
+  init: RequestInit,
+  timeoutMs: number,
+): Promise<Response> {
+  const timeoutController = new AbortController()
+  const externalSignal = init.signal
+  const onExternalAbort = () => timeoutController.abort()
+  if (externalSignal) {
+    if (externalSignal.aborted) {
+      throw new DOMException('Request was aborted.', 'AbortError')
+    }
+    externalSignal.addEventListener('abort', onExternalAbort, { once: true })
+  }
+  const timeoutId = setTimeout(() => timeoutController.abort(), timeoutMs)
+  try {
+    return await fetch(input, {
+      ...init,
+      signal: timeoutController.signal,
+    })
+  } finally {
+    clearTimeout(timeoutId)
+    if (externalSignal) {
+      externalSignal.removeEventListener('abort', onExternalAbort)
+    }
+  }
+}
 
 function toSafeDimension(value?: number): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) return 0
@@ -110,6 +151,43 @@ function toSafeNumber(value: unknown, fallback: number): number {
   return parsed
 }
 
+function extractObjectErrorMessage(error: unknown): string | null {
+  if (!error || typeof error !== 'object') return null
+  const record = error as Record<string, unknown>
+
+  const candidates = [record.message, record.error, record.reason, record.detail, record.statusText]
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string') {
+      const trimmed = candidate.trim()
+      if (trimmed) return trimmed
+    }
+  }
+
+  if (typeof record.type === 'string') {
+    const type = record.type.trim()
+    if (type) return `event (${type})`
+  }
+
+  const nested = record.error ?? record.cause
+  if (nested) {
+    const nestedMessage = extractObjectErrorMessage(nested)
+    if (nestedMessage) return nestedMessage
+  }
+
+  return null
+}
+
+function toSafeErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message.slice(0, 400)
+  }
+
+  const readable = extractObjectErrorMessage(error)
+  if (readable) return readable.slice(0, 400)
+
+  return '요청 처리 중 알 수 없는 오류가 발생했습니다.'
+}
+
 function cleanPrompt(prompt: string): string {
   const p = prompt.trim()
   return p.length > 0 ? p : 'A detailed medical and clinical illustration'
@@ -128,11 +206,29 @@ function isSketchPayloadTooSmall(dataUrl: string): boolean {
   }
 }
 
-function composePrompt(prompt: string, negativePrompt?: string): string {
+function composePrompt(prompt: string, negativePrompt?: string, locationHint?: string): string {
   const base = cleanPrompt(prompt)
+  const location = locationHint?.trim().slice(0, 1700)
   const negative = negativePrompt?.trim()
-  if (!negative) return base
-  return `${base}\n\nNegative prompt: ${negative}`
+  const styleInstruction =
+    'Clinical output must be realistic medical intraoral photo style, neutral oral background, consistent lighting, no drawings, no labels, no symbols, no text, no extra marks, no artifacts.'
+  const localizationBlock = location
+    ? [
+        'Localization strict mode (must follow exactly):',
+        '1) Apply requested edits only inside the target teeth boxes described below.',
+        '2) Do not modify non-target teeth, enamel, gingiva, palate, tongue, lips, or lips edges.',
+        '3) Do not move existing anatomy or redraw non-target structures.',
+        '4) If a target box is not suitable for the request, skip that tooth and keep it unchanged.',
+        `5) Location guidance JSON: ${location}`,
+      ].join('\n')
+    : 'Keep dental anatomy globally consistent and avoid any new lesions, restorations, crowns, or calculus on non-target areas.'
+  const sections = [
+    base,
+    styleInstruction,
+    localizationBlock,
+  ]
+  if (negative) sections.push(`Negative prompt: ${negative}`)
+  return sections.filter(Boolean).join('\n\n')
 }
 
 function toOpenAISize(width: number, height: number): '512x512' | '1024x1024' {
@@ -216,7 +312,28 @@ function isGeminiInvalidSketchError(error: unknown): boolean {
   return msg.includes('unable to process input image') || msg.includes('invalid_argument')
 }
 
-async function generateWithGemini(finalPrompt: string, width: number, height: number, sketchDataUrl: string): Promise<string> {
+function isSketchInputError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false
+  const msg = error.message.toLowerCase()
+  const lower = msg.replace(/_/g, ' ')
+  return (
+    lower.includes('unable to process input image') ||
+    lower.includes('invalid argument') ||
+    lower.includes('invalid image') ||
+    lower.includes('image too large') ||
+    lower.includes('invalid base64') ||
+    lower.includes('invalid value for `image`') ||
+    lower.includes('cannot parse image')
+  )
+}
+
+async function generateWithGemini(
+  finalPrompt: string,
+  width: number,
+  height: number,
+  sketchDataUrl: string,
+  requestTimeoutMs: number,
+): Promise<string> {
   const maxDimension = Math.max(width, height)
   const sizeHint = `Render as a square image around ${maxDimension}x${maxDimension}px.`
 
@@ -236,15 +353,19 @@ async function generateWithGemini(finalPrompt: string, width: number, height: nu
 
   for (const model of models) {
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`
-    const response = await fetch(`${endpoint}?key=${GEMINI_KEY}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
+    const response = await fetchWithTimeout(
+      `${endpoint}?key=${GEMINI_KEY}`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          contents: [{ parts }],
+        }),
       },
-      body: JSON.stringify({
-        contents: [{ parts }],
-      }),
-    })
+      requestTimeoutMs,
+    )
 
     const responseText = await response.text()
     if (!response.ok) {
@@ -277,15 +398,19 @@ async function generateWithGemini(finalPrompt: string, width: number, height: nu
   throw new Error(`gemini generation failed: ${errors.join(' | ')}`)
 }
 
-async function submitToFalQueue(payload: Record<string, unknown>): Promise<QueueSubmitResponse> {
-  const response = await fetch(FAL_API_ENDPOINT, {
-    method: 'POST',
-    headers: {
-      Authorization: `Key ${FAL_KEY}`,
-      'Content-Type': 'application/json',
+async function submitToFalQueue(payload: Record<string, unknown>, requestTimeoutMs: number): Promise<QueueSubmitResponse> {
+  const response = await fetchWithTimeout(
+    FAL_API_ENDPOINT,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Key ${FAL_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
     },
-    body: JSON.stringify(payload),
-  })
+    requestTimeoutMs,
+  )
 
   if (!response.ok) {
     const text = await response.text()
@@ -295,7 +420,7 @@ async function submitToFalQueue(payload: Record<string, unknown>): Promise<Queue
   return (await response.json()) as QueueSubmitResponse
 }
 
-async function waitForFalResult(requestId: string, statusUrl?: string): Promise<QueueStatusResponse> {
+async function waitForFalResult(requestId: string, statusUrl: string | undefined, requestTimeoutMs: number): Promise<QueueStatusResponse> {
   const statusEndpoint = statusUrl ?? `${FAL_STATUS_BASE}/requests/${requestId}/status`
   const completedEndpoint = statusUrl ?? `${FAL_STATUS_BASE}/requests/${requestId}`
   let lastStatus = ''
@@ -303,9 +428,13 @@ async function waitForFalResult(requestId: string, statusUrl?: string): Promise<
   for (let i = 0; i < 180; i += 1) {
     await sleep(1000)
 
-    const statusResponse = await fetch(statusEndpoint, {
-      headers: { Authorization: `Key ${FAL_KEY}` },
-    })
+    const statusResponse = await fetchWithTimeout(
+      statusEndpoint,
+      {
+        headers: { Authorization: `Key ${FAL_KEY}` },
+      },
+      requestTimeoutMs,
+    )
     if (!statusResponse.ok) {
       throw new Error(`fal status check failed (${statusResponse.status})`)
     }
@@ -322,9 +451,13 @@ async function waitForFalResult(requestId: string, statusUrl?: string): Promise<
         return statusPayload
       }
 
-      const completedResponse = await fetch(completedEndpoint, {
-        headers: { Authorization: `Key ${FAL_KEY}` },
-      })
+      const completedResponse = await fetchWithTimeout(
+        completedEndpoint,
+        {
+          headers: { Authorization: `Key ${FAL_KEY}` },
+        },
+        requestTimeoutMs,
+      )
       if (!completedResponse.ok) {
         throw new Error(`fal result request failed (${completedResponse.status})`)
       }
@@ -357,25 +490,29 @@ async function generateWithFal(
   numSteps: number,
   seed: number,
   enableSafetyChecker: boolean,
+  requestTimeoutMs: number,
 ): Promise<string> {
-  const queued = await submitToFalQueue({
-    prompt,
-    negative_prompt: negativePrompt,
-    control_image_url: sketchDataUrl,
-    controlnet_conditioning_scale: controlScale,
-    image_size: { width, height },
-    guidance_scale: guidanceScale,
-    num_inference_steps: numSteps,
-    num_images: 1,
-    enable_safety_checker: enableSafetyChecker,
-    ...(Number.isFinite(seed) ? { seed: Math.round(seed) } : {}),
-  } satisfies Record<string, unknown>)
+  const queued = await submitToFalQueue(
+    {
+      prompt,
+      negative_prompt: negativePrompt,
+      control_image_url: sketchDataUrl,
+      controlnet_conditioning_scale: controlScale,
+      image_size: { width, height },
+      guidance_scale: guidanceScale,
+      num_inference_steps: numSteps,
+      num_images: 1,
+      enable_safety_checker: enableSafetyChecker,
+      ...(Number.isFinite(seed) ? { seed: Math.round(seed) } : {}),
+    } satisfies Record<string, unknown>,
+    requestTimeoutMs,
+  )
 
   if (!queued.request_id && !queued.status_url) {
     throw new Error('fal response missing request id and status url.')
   }
 
-  const result = await waitForFalResult(queued.request_id ?? '', queued.status_url)
+  const result = await waitForFalResult(queued.request_id ?? '', queued.status_url, requestTimeoutMs)
   const imageUrl = extractImageUrl(result)
   if (!imageUrl) {
     throw new Error('fal result did not include an image URL.')
@@ -388,6 +525,7 @@ async function generateWithOpenAIByEdit(
   width: number,
   height: number,
   sketchDataUrl: string,
+  requestTimeoutMs: number,
 ): Promise<string> {
   const sketchBlob = extractDataUrl(sketchDataUrl)
   const formData = new FormData()
@@ -398,13 +536,17 @@ async function generateWithOpenAIByEdit(
   formData.append('size', toOpenAISize(width, height))
   formData.append('response_format', 'url')
 
-  const response = await fetch(OPENAI_IMAGE_EDIT_ENDPOINT, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${OPENAI_KEY}`,
+  const response = await fetchWithTimeout(
+    OPENAI_IMAGE_EDIT_ENDPOINT,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${OPENAI_KEY}`,
+      },
+      body: formData,
     },
-    body: formData,
-  })
+    requestTimeoutMs,
+  )
 
   if (!response.ok) {
     const errorText = await response.text()
@@ -424,11 +566,14 @@ async function generateImageWithOpenAI(
   width: number,
   height: number,
   sketchDataUrl: string,
+  requestTimeoutMs: number,
 ): Promise<string> {
-  return generateWithOpenAIByEdit(finalPrompt, width, height, sketchDataUrl)
+  return generateWithOpenAIByEdit(finalPrompt, width, height, sketchDataUrl, requestTimeoutMs)
 }
 
 export async function POST(request: NextRequest) {
+  const providersTried: string[] = []
+  const providerTrace: ProviderAttempt[] = []
   try {
     if (!GEMINI_KEY && !OPENAI_KEY && !FAL_KEY) {
       return NextResponse.json(
@@ -436,8 +581,10 @@ export async function POST(request: NextRequest) {
           success: false,
           error:
             '환경변수에 GEMINI_API_KEY, OPENAI_API_KEY, FAL_KEY 중 하나 이상 등록해 주세요.',
+          errorCode: 'provider-missing',
+          providerTrace: [],
         } satisfies ImageGenerateResponse,
-        { status: 500 },
+        { status: 503 },
       )
     }
 
@@ -447,6 +594,8 @@ export async function POST(request: NextRequest) {
         {
           success: false,
           error: '요청 본문이 유효하지 않습니다.',
+          errorCode: 'invalid-request',
+          providerTrace: [],
         } satisfies ImageGenerateResponse,
         { status: 400 },
       )
@@ -458,6 +607,8 @@ export async function POST(request: NextRequest) {
         {
           success: false,
           error: '프롬프트를 입력해 주세요.',
+          errorCode: 'invalid-request',
+          providerTrace: [],
         } satisfies ImageGenerateResponse,
         { status: 400 },
       )
@@ -465,8 +616,8 @@ export async function POST(request: NextRequest) {
 
     const width = toSafeDimension(body.width) || DEFAULT_SIZE.width
     const height = toSafeDimension(body.height) || DEFAULT_SIZE.height
-    const finalPrompt = composePrompt(trimmedPrompt, body.negativePrompt?.trim())
-    const prompt = cleanPrompt(trimmedPrompt)
+    const locationHint = typeof body.locationHint === 'string' ? body.locationHint.trim().slice(0, 1700) : ''
+    const finalPrompt = composePrompt(trimmedPrompt, body.negativePrompt?.trim(), locationHint)
     const sketchDataUrl = typeof body.sketchDataUrl === 'string' ? body.sketchDataUrl.trim() : ''
     const hasSketch = hasDataUrl(sketchDataUrl)
     if (!hasSketch) {
@@ -474,6 +625,8 @@ export async function POST(request: NextRequest) {
         {
           success: false,
           error: '입력한 스케치가 유효하지 않습니다. 스케치 이미지가 다시 로드되지 않았거나 손상됐을 수 있습니다.',
+          errorCode: 'invalid-request',
+          providerTrace: [],
         } satisfies ImageGenerateResponse,
         { status: 400 },
       )
@@ -482,7 +635,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           success: false,
-          error: '스케치 데이터가 너무 작습니다. 더 굵고 넓은 라인으로 다시 스케치한 뒤 시도해주세요.'
+          error: '스케치 데이터가 너무 작습니다. 더 굵고 넓은 라인으로 다시 스케치한 뒤 시도해주세요.',
+          errorCode: 'invalid-request',
+          providerTrace: [],
         } satisfies ImageGenerateResponse,
         { status: 400 },
       )
@@ -493,38 +648,72 @@ export async function POST(request: NextRequest) {
     const numInferenceSteps = Math.min(60, Math.max(8, Math.round(toSafeNumber(body.numSteps, 25))))
     const seed = toSafeNumber(body.seed, Number.NaN)
     const enableSafetyChecker = body.enableSafetyChecker !== false
+    const requestTimeoutMs = clamp(toSafeNumber(body.requestTimeoutMs, DEFAULT_REQUEST_TIMEOUT_MS), 2000, 300000)
 
     let imageUrl: string | null = null
     let lastError: unknown = null
     let geminiInvalidSketch = false
-
+    let sketchInputError = false
     if (GEMINI_KEY) {
+      const attempt: ProviderAttempt = {
+        provider: 'gemini',
+        status: 'attempted',
+      }
+      const startedAt = Date.now()
+      providersTried.push('gemini')
+      providerTrace.push(attempt)
       try {
-        imageUrl = await generateWithGemini(finalPrompt, width, height, sketchDataUrl)
+        imageUrl = await generateWithGemini(finalPrompt, width, height, sketchDataUrl, requestTimeoutMs)
+        attempt.status = 'succeeded'
       } catch (geminiError) {
         lastError = geminiError
         geminiInvalidSketch = isGeminiInvalidSketchError(geminiError)
+        sketchInputError = sketchInputError || isSketchInputError(geminiError)
+        attempt.status = 'failed'
+        attempt.error = toSafeErrorMessage(geminiError)
         console.warn('Gemini generation failed.', geminiError)
+      } finally {
+        attempt.latencyMs = Date.now() - startedAt
       }
     }
 
     if (!imageUrl && OPENAI_KEY) {
+      const attempt: ProviderAttempt = {
+        provider: 'openai',
+        status: 'attempted',
+      }
+      const startedAt = Date.now()
+      providersTried.push('openai')
+      providerTrace.push(attempt)
       try {
-        imageUrl = await generateImageWithOpenAI(finalPrompt, width, height, sketchDataUrl)
+        imageUrl = await generateImageWithOpenAI(finalPrompt, width, height, sketchDataUrl, requestTimeoutMs)
+        attempt.status = 'succeeded'
       } catch (openAIError) {
         lastError = openAIError
+        sketchInputError = sketchInputError || isSketchInputError(openAIError)
+        attempt.status = 'failed'
+        attempt.error = toSafeErrorMessage(openAIError)
         if (isOpenAIBillingHardLimitError(openAIError)) {
           console.warn('OpenAI billing limit reached, trying fal if available.', openAIError)
         } else {
           console.warn('OpenAI generation failed, trying fal if available.', openAIError)
         }
+      } finally {
+        attempt.latencyMs = Date.now() - startedAt
       }
     }
 
     if (!imageUrl && FAL_KEY) {
+      const attempt: ProviderAttempt = {
+        provider: 'fal',
+        status: 'attempted',
+      }
+      const startedAt = Date.now()
+      providersTried.push('fal')
+      providerTrace.push(attempt)
       try {
         imageUrl = await generateWithFal(
-          prompt,
+          finalPrompt,
           body.negativePrompt?.trim() || 'cartoon, illustration, blurry, text',
           width,
           height,
@@ -534,19 +723,29 @@ export async function POST(request: NextRequest) {
           numInferenceSteps,
           seed,
           enableSafetyChecker,
+          requestTimeoutMs,
         )
+        attempt.status = 'succeeded'
       } catch (falError) {
         lastError = falError
+        sketchInputError = sketchInputError || isSketchInputError(falError)
+        attempt.status = 'failed'
+        attempt.error = toSafeErrorMessage(falError)
         console.warn('fal generation failed.', falError)
+      } finally {
+        attempt.latencyMs = Date.now() - startedAt
       }
     }
 
     if (!imageUrl) {
-      if (geminiInvalidSketch) {
+      if (geminiInvalidSketch || sketchInputError) {
         return NextResponse.json(
           {
             success: false,
             error: '입력한 스케치가 유효하지 않습니다. 스케치 파일을 다시 업로드해 주세요.',
+            errorCode: 'invalid-sketch',
+            providersTried,
+            providerTrace,
           } satisfies ImageGenerateResponse,
           { status: 400 },
         )
@@ -557,24 +756,41 @@ export async function POST(request: NextRequest) {
           {
             success: false,
             error: 'OpenAI billing hard limit has been reached. Please update your OpenAI quota.',
+            errorCode: 'billing-limit',
+            providersTried,
+            providerTrace,
           },
           { status: 402 },
         )
       }
 
       if (lastError instanceof Error) {
-        throw lastError
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Image generation failed: ${lastError.message}`,
+            errorCode: 'provider-failed',
+            providersTried,
+            providerTrace,
+          },
+          { status: 502 },
+        )
       }
       throw new Error('No image provider succeeded.')
     }
 
-    return NextResponse.json({ success: true, imageUrl } satisfies ImageGenerateResponse)
+    return NextResponse.json(
+      { success: true, imageUrl, providersTried, providerTrace } satisfies ImageGenerateResponse,
+    )
   } catch (error) {
     console.error('Image generation failed:', error)
     return NextResponse.json(
       {
         success: false,
         error: error instanceof Error ? error.message : 'Image generation failed.',
+        errorCode: 'server-error',
+        providerTrace,
+        providersTried,
       } satisfies ImageGenerateResponse,
       { status: 500 },
     )
