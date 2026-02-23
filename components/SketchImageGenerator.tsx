@@ -1835,12 +1835,12 @@ export default function SketchImageGenerator({ onGenerated }: SketchImageGenerat
 
     const trimmedPrompt = prompt.trim()
     if (!trimmedPrompt) {
-      setError('?꾨＼?꾪듃瑜??낅젰??二쇱꽭??')
+      setError('프롬프트를 입력해 주세요.')
       return
     }
 
     if (!hasUserMarking) {
-      setError('移섏븘 ?쒗뵆由우뿉??遺?꾨? ?좏깮?섍굅???ㅼ?移섎? 癒쇱? 洹몃젮二쇱꽭??')
+      setError('치아 템플릿에서 위치를 선택하거나 스케치를 먼저 그려 주세요.')
       return
     }
 
@@ -1849,7 +1849,7 @@ export default function SketchImageGenerator({ onGenerated }: SketchImageGenerat
     normalizedCanvas.height = Math.max(512, canvas.height)
     const normalizedCtx = normalizedCanvas.getContext('2d')
     if (!normalizedCtx) {
-      setError('罹붾쾭??而⑦뀓?ㅽ듃瑜?珥덇린?뷀븯吏 紐삵뻽?듬땲??')
+      setError('캔버스 컨텍스트를 초기화하지 못했습니다.')
       return
     }
 
@@ -1868,7 +1868,7 @@ export default function SketchImageGenerator({ onGenerated }: SketchImageGenerat
     })
 
     if (prepared.inkSamples < 30 && selectedTeeth.length === 0) {
-      setError('?ㅼ?移섍? ?덈Т ?고븯嫄곕굹 ?먮┸?⑸땲?? ?좎쓣 ???먭퍖怨?吏꾪븯寃??ㅼ떆 洹몃젮二쇱꽭??')
+      setError('스케치 정보가 너무 적거나 흐립니다. 선을 더 굵고 진하게 다시 그려 주세요.')
       return
     }
 
@@ -1938,17 +1938,28 @@ export default function SketchImageGenerator({ onGenerated }: SketchImageGenerat
 
   return (
     <div className="space-y-6">
-        <div className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
+      <div className="rounded-3xl border border-slate-200 bg-gradient-to-br from-slate-50 to-white p-5 shadow-sm">
         <p className="text-sm text-gray-600">
-          ?ロ엺?? ?ㅻЦ?? 踰뚮┛?????щ윭 移섏븘 ?쒗뵆由우쓣 ?좏깮??鍮좊Ⅴ寃??꾩튂瑜??뺥븯怨? ?좏깮??移섏븘/洹몃┝???꾩튂瑜?諛섏쁺???꾩긽 ?대?吏瑜??앹꽦?⑸땲??
+          템플릿을 고른 뒤 치아를 클릭하거나 스케치로 범위를 표시하면, 선택한 위치를 중심으로 임상 이미지를 생성합니다.
         </p>
+        <div className="mt-4 grid gap-2 text-xs text-slate-700 md:grid-cols-3">
+          <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+            1. 템플릿/치아 선택
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+            2. 프롬프트 입력
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+            3. 생성 후 에디터 전송
+          </div>
+        </div>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-2">
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.08fr)_minmax(0,0.92fr)]">
         <div className="space-y-4">
-          <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+          <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
             <div className="mb-4 flex items-center justify-between gap-3">
-              <h3 className="text-sm font-semibold text-gray-700">?꾧뎄 ?ㅼ젙</h3>
+              <h3 className="text-sm font-semibold text-gray-700">도구 설정</h3>
               <div className="inline-flex gap-2">
                 <button
                   type="button"
@@ -1956,14 +1967,14 @@ export default function SketchImageGenerator({ onGenerated }: SketchImageGenerat
                   disabled={undoStack.length === 0}
                   className="rounded-xl border border-gray-300 px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  ?섎룎由ш린
+                  되돌리기
                 </button>
                 <button
                   type="button"
                   onClick={clearCanvas}
                   className="rounded-xl border border-gray-300 px-3 py-2 text-sm"
                 >
-                  ?꾩껜 吏?곌린
+                  전체 지우기
                 </button>
               </div>
             </div>
@@ -2012,13 +2023,14 @@ export default function SketchImageGenerator({ onGenerated }: SketchImageGenerat
                   onClick={() => setInputMode('draw')}
                   className={`px-3 py-1.5 text-sm ${inputMode === 'draw' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700'}`}
                 >
-                  ?먯쑀 ?쒕줈??                </button>
+                  자유 스케치
+                </button>
                 <button
                   type="button"
                   onClick={() => setInputMode('tooth-select')}
                   className={`border-l border-gray-300 px-3 py-1.5 text-sm ${inputMode === 'tooth-select' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700'}`}
                 >
-                  移섏븘 ?좏깮
+                  치아 선택
                 </button>
               </div>
               <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -2027,7 +2039,8 @@ export default function SketchImageGenerator({ onGenerated }: SketchImageGenerat
                   onClick={() => setSelectedTeeth([])}
                   className="rounded-lg border border-gray-300 px-2 py-1 text-xs text-gray-600"
                 >
-                  ?좏깮 移섏븘 珥덇린??                </button>
+                  선택 치아 초기화
+                </button>
                 <span className="text-xs text-gray-500">
                   Mode: {inputMode === 'tooth-select' ? 'Tooth select mode' : 'Drawing mode'}
                 </span>
@@ -2039,18 +2052,18 @@ export default function SketchImageGenerator({ onGenerated }: SketchImageGenerat
                       key={id}
                       className="rounded-md border border-red-200 bg-red-50 px-2 py-0.5 text-xs text-red-700"
                     >
-                      移섏븘 {id}
+                      치아 {id}
                     </span>
                   ))}
                 </div>
               ) : (
-                <p className="mt-2 text-xs text-gray-400">?좏깮??移섏븘 ?놁쓬</p>
+                <p className="mt-2 text-xs text-gray-400">선택된 치아 없음</p>
               )}
             </div>
 
             <div className="mb-4 grid gap-3 md:grid-cols-3">
               <label className="text-sm">
-                <span className="mb-1 block text-gray-700">釉뚮윭??援듦린: {brushSize}px</span>
+                <span className="mb-1 block text-gray-700">브러시 굵기: {brushSize}px</span>
                 <input
                   type="range"
                   min={2}
@@ -2062,7 +2075,7 @@ export default function SketchImageGenerator({ onGenerated }: SketchImageGenerat
               </label>
 
               <label className="text-sm">
-                <span className="mb-1 block text-gray-700">?됱긽</span>
+                <span className="mb-1 block text-gray-700">색상</span>
                 <input
                   type="color"
                   value={brushColor}
@@ -2072,7 +2085,7 @@ export default function SketchImageGenerator({ onGenerated }: SketchImageGenerat
               </label>
 
               <label className="text-sm">
-                <span className="mb-1 block text-gray-700">罹붾쾭???ш린</span>
+                <span className="mb-1 block text-gray-700">캔버스 크기</span>
                 <select
                   value={size}
                   onChange={(event) => setSize(Number(event.target.value) as SquareSize)}
@@ -2088,13 +2101,13 @@ export default function SketchImageGenerator({ onGenerated }: SketchImageGenerat
             </div>
 
             <div className="mb-4">
-              <span className="mb-2 block text-sm text-gray-700">鍮좊Ⅸ ?됱긽 ?좏깮</span>
+              <span className="mb-2 block text-sm text-gray-700">빠른 색상 선택</span>
               <div className="grid grid-cols-6 gap-2">
                 {BRUSH_PRESETS.map((color) => (
                   <button
                     type="button"
                     key={color}
-                    aria-label={`?됱긽 ${color}`}
+                    aria-label={`색상 ${color}`}
                     className={`h-8 rounded-md border ${brushColor === color ? 'border-2 border-blue-600 ring-2 ring-blue-200' : 'border-gray-300'}`}
                     style={{ backgroundColor: color }}
                     onClick={() => setBrushColor(color)}
@@ -2105,7 +2118,7 @@ export default function SketchImageGenerator({ onGenerated }: SketchImageGenerat
 
             <div className="mb-4 grid gap-3">
               <label className="flex items-center justify-between text-sm">
-                <span className="text-gray-700">?ㅼ?移??먮룞 蹂댁젙</span>
+                <span className="text-gray-700">스케치 자동 보정</span>
                 <input
                   type="checkbox"
                   checked={enableSketchEnhance}
@@ -2116,7 +2129,7 @@ export default function SketchImageGenerator({ onGenerated }: SketchImageGenerat
               {enableSketchEnhance ? (
                 <div className="space-y-3 rounded-xl border border-gray-200 p-3">
                   <label className="text-sm">
-                    <span className="mb-1 block text-gray-700">?좊챸?? {sketchContrast.toFixed(1)}</span>
+                    <span className="mb-1 block text-gray-700">선명도: {sketchContrast.toFixed(1)}</span>
                     <input
                       type="range"
                       min={1.1}
@@ -2129,7 +2142,7 @@ export default function SketchImageGenerator({ onGenerated }: SketchImageGenerat
                   </label>
 
                   <label className="text-sm">
-                    <span className="mb-1 block text-gray-700">諛곌꼍 ?쒓굅 ?꾧퀎媛? {backgroundThreshold}</span>
+                    <span className="mb-1 block text-gray-700">배경 제거 임계값: {backgroundThreshold}</span>
                     <input
                       type="range"
                       min={220}
@@ -2142,7 +2155,7 @@ export default function SketchImageGenerator({ onGenerated }: SketchImageGenerat
                   </label>
 
                   <label className="text-sm">
-                    <span className="mb-1 block text-gray-700">?몄씠利??쒓굅: {noiseSuppression}</span>
+                    <span className="mb-1 block text-gray-700">노이즈 제거: {noiseSuppression}</span>
                     <input
                       type="range"
                       min={0}
@@ -2183,7 +2196,7 @@ export default function SketchImageGenerator({ onGenerated }: SketchImageGenerat
                   }}
                   className="pointer-events-none absolute z-20 inline-flex -translate-x-1/2 transform rounded-md bg-slate-800 px-2 py-1 text-xs text-white shadow"
                 >
-                  移섏븘 {hoveredToothHint.id} ({describeTooth(hoveredToothHint.id)}) ?대┃ ?좏깮
+                  치아 {hoveredToothHint.id} ({describeTooth(hoveredToothHint.id)}) 클릭 선택
                 </div>
               ) : null}
               {hoveredToothHint && inputMode === 'tooth-select' ? (
@@ -2201,11 +2214,12 @@ export default function SketchImageGenerator({ onGenerated }: SketchImageGenerat
 
             {!hasUserMarking ? (
               <p className="mt-2 text-xs text-gray-400">
-                移섏븘瑜??대┃???좏깮?섍굅???쒕줈?됱쑝濡?蹂묐? ?꾩튂瑜??쒖떆??二쇱꽭??
+                치아를 클릭하거나 스케치로 병변 위치를 표시해 주세요.
               </p>
             ) : (
               <p className="mt-2 text-xs text-gray-500">
-                ?좏깮 移섏븘 {selectedTeeth.length}媛?              </p>
+                선택 치아 {selectedTeeth.length}개
+              </p>
             )}
           </div>
 
@@ -2214,18 +2228,18 @@ export default function SketchImageGenerator({ onGenerated }: SketchImageGenerat
             className="space-y-3 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm"
           >
             <label className="block text-sm text-gray-700">
-              ?꾨＼?꾪듃
+              프롬프트
               <textarea
                 value={prompt}
                 onChange={(event) => setPrompt(event.target.value)}
-                placeholder="?꾩긽 ?ㅻ챸, 紐⑥뼇, 媛곷룄, 議곕챸, ?ъ쭏媛먯쓣 援ъ껜?곸쑝濡??낅젰??二쇱꽭??"
+                placeholder="임상 설명, 앵글, 조명, 질감, 병변 위치를 구체적으로 입력해 주세요."
                 rows={4}
                 className="mt-1 block w-full rounded-xl border border-gray-300 px-3 py-2 text-sm"
               />
             </label>
 
             <label className="block text-sm text-gray-700">
-              ?ㅺ굅?곕툕 ?꾨＼?꾪듃 (?좏깮)
+              네거티브 프롬프트 (선택)
               <input
                 value={negativePrompt}
                 onChange={(event) => setNegativePrompt(event.target.value)}
@@ -2272,17 +2286,17 @@ export default function SketchImageGenerator({ onGenerated }: SketchImageGenerat
                   onChange={(event) => setNumSteps(Number(event.target.value))}
                   className="w-full"
                 />
-                <span className="text-xs text-gray-500">{numSteps} ?ㅽ뀦</span>
+                <span className="text-xs text-gray-500">{numSteps} steps</span>
               </label>
 
               <label className="text-sm">
-                <span className="mb-1 block text-gray-700">Seed (?좏깮)</span>
+                <span className="mb-1 block text-gray-700">Seed (선택)</span>
                 <input
                   type="number"
                   inputMode="numeric"
                   value={seed}
                   onChange={(event) => setSeed(event.target.value)}
-                  placeholder="?? 42"
+                  placeholder="예: 42"
                   className="w-full rounded-lg border border-gray-300 px-2 py-2 text-sm"
                 />
               </label>
@@ -2294,25 +2308,25 @@ export default function SketchImageGenerator({ onGenerated }: SketchImageGenerat
                 checked={enableSafetyChecker}
                 onChange={(event) => setEnableSafetyChecker(event.target.checked)}
               />
-              ?덉쟾 寃???덉슜
+              안전 필터 사용
             </label>
 
             <button
               type="submit"
               disabled={isGenerating || !prompt.trim() || !hasUserMarking}
-              className="w-full rounded-xl bg-primary-600 py-3 font-semibold text-white disabled:opacity-50"
+              className="w-full rounded-xl bg-primary-600 py-3 font-semibold text-white transition hover:bg-primary-700 disabled:opacity-50"
             >
-              {isGenerating ? 'AI ?대?吏 ?앹꽦 以?..' : 'AI ?대?吏 ?앹꽦'}
+              {isGenerating ? 'AI 이미지 생성 중...' : 'AI 이미지 생성'}
             </button>
           </form>
 
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
         </div>
 
-        <div className="space-y-4">
+        <div className="space-y-4 xl:sticky xl:top-4 xl:self-start">
           <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
             <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-gray-900">?앹꽦 寃곌낵</h3>
+              <h3 className="text-sm font-semibold text-gray-900">생성 결과</h3>
               {generatedImage && (
                 <div className="inline-flex gap-2">
                   <button
@@ -2320,14 +2334,14 @@ export default function SketchImageGenerator({ onGenerated }: SketchImageGenerat
                     onClick={download}
                     className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm"
                   >
-                    ?ㅼ슫濡쒕뱶
+                    다운로드
                   </button>
                   <button
                     type="button"
                     onClick={sendToEditor}
                     className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm text-emerald-700"
                   >
-                    ?먮뵒?곕줈 ?꾩넚
+                    에디터로 전송
                   </button>
                 </div>
               )}
@@ -2335,17 +2349,17 @@ export default function SketchImageGenerator({ onGenerated }: SketchImageGenerat
 
             <div className="flex min-h-[420px] items-center justify-center rounded-xl border border-gray-200 bg-gray-50">
               {generatedImage ? (
-                <img src={generatedImage} alt="AI ?앹꽦 寃곌낵" className="h-auto w-full rounded-xl" />
+                <img src={generatedImage} alt="AI 생성 결과" className="h-auto w-full rounded-xl" />
               ) : (
                 <p className="px-4 text-center text-sm text-gray-400">
-                  ?대?吏媛 ?앹꽦?섎㈃ ?ш린??誘몃━蹂닿린媛 ?쒖떆?⑸땲?? ?꾨＼?꾪듃瑜??낅젰?섍퀬 ?ㅼ?移섎? 洹몃┛ ???앹꽦 踰꾪듉???뚮윭二쇱꽭??
+                  이미지가 생성되면 여기에 미리보기가 표시됩니다. 프롬프트 입력 후 생성 버튼을 눌러 주세요.
                 </p>
               )}
             </div>
           </div>
 
           <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4 text-sm text-blue-800">
-            李멸퀬: ?좏깮???쒗뵆由??ロ엺???ㅻЦ??踰뚮┛??怨?移섏븘 踰덊샇, 留덊궧 ?꾩튂媛 ?꾨＼?꾪듃??諛섏쁺?섏뼱 ?앹꽦?⑸땲??
+            참고: 템플릿과 치아 선택 정보가 프롬프트에 함께 반영되어 위치 정확도를 높입니다.
           </div>
         </div>
       </div>
