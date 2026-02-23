@@ -459,8 +459,8 @@ const ARCH_CENTERLINE_PROFILES: Record<
 const DENTAL_TEMPLATES: DentalTemplate[] = [
   {
     id: 'closed-mouth',
-    label: '?ロ엺??,
-    description: '援먰빀硫댁씠 ?쒕줈 遺숈? 湲곕낯 ?쒗뵆由?,
+    label: 'Closed-mouth',
+    description: 'Closed-mouth with natural occlusion and no visible tongue space.',
     marginX: 0.1,
     upperY: 0.24,
     lowerY: 0.56,
@@ -480,8 +480,8 @@ const DENTAL_TEMPLATES: DentalTemplate[] = [
   },
   {
     id: 'partly-open',
-    label: '?ㅻЦ??,
-    description: '?낆씠 ?댁쭩 踰뚯뼱吏??곹깭濡?移섏뿴 媛꾧꺽???볦뼱吏?,
+    label: 'Partly Open',
+    description: 'Mild vertical opening, front gap visible for focused annotation.',
     marginX: 0.095,
     upperY: 0.2,
     lowerY: 0.6,
@@ -501,7 +501,7 @@ const DENTAL_TEMPLATES: DentalTemplate[] = [
   },
   {
     id: 'slightly-open',
-    label: 'Slight Open',
+    label: 'Slightly Open',
     description: 'Conservative mouth opening with a narrow oral gap for focused anterior work.',
     marginX: 0.095,
     upperY: 0.205,
@@ -522,8 +522,8 @@ const DENTAL_TEMPLATES: DentalTemplate[] = [
   },
   {
     id: 'semi-open',
-    label: '諛섍컻??,
-    description: '?낆씠 議곌툑留??대젮 ?덈뒗 ?곹깭濡?移섏뿴 諛곗뿴 蹂댁젙???ъ?',
+    label: 'Semi Open',
+    description: 'Balanced partial opening for medium-gap frontal treatment references.',
     marginX: 0.095,
     upperY: 0.21,
     lowerY: 0.59,
@@ -543,8 +543,8 @@ const DENTAL_TEMPLATES: DentalTemplate[] = [
   },
   {
     id: 'wide-open',
-    label: '踰뚮┛??,
-    description: '?볤쾶 踰뚮┛ ?낆쑝濡??덉そ 移섎㈃ 蹂닿린媛 ?ъ?',
+    label: 'Wide Open',
+    description: 'Wide oral opening with larger gap for molars and posterior details.',
     marginX: 0.09,
     upperY: 0.15,
     lowerY: 0.65,
@@ -585,8 +585,8 @@ const DENTAL_TEMPLATES: DentalTemplate[] = [
   },
   {
     id: 'ultra-open',
-    label: '洹밴컻??,
-    description: '?낆쓣 ?ш쾶 踰뚮┛ ?곹깭濡?援먰빀硫?移섍렐遺源뚯? ?뺣??쒖떆媛 ?ъ?',
+    label: 'Ultra Open',
+    description: 'Very wide opening template for maximum posterior and tongue-space visibility.',
     marginX: 0.085,
     upperY: 0.14,
     lowerY: 0.67,
@@ -606,8 +606,8 @@ const DENTAL_TEMPLATES: DentalTemplate[] = [
   },
   {
     id: 'upper-focus',
-    label: '?곸븙 ?대줈利덉뾽',
-    description: '?곸븙 移섏뿴???ш쾶 蹂대㈃??移섏븘 踰덊샇 ?쒖떆',
+    label: 'Upper Focus',
+    description: 'Upper arch focus template with stronger upper emphasis and moderate lower context.',
     marginX: 0.11,
     upperY: 0.23,
     lowerY: 0.58,
@@ -627,8 +627,8 @@ const DENTAL_TEMPLATES: DentalTemplate[] = [
   },
   {
     id: 'lower-focus',
-    label: '?섏븙 ?대줈利덉뾽',
-    description: '?섏븙 移섏뿴, ?뱁엳 援ъ튂瑜??ш쾶 蹂???,
+    label: 'Lower Focus',
+    description: 'Lower arch focus template with clearer lower visibility and reduced upper emphasis.',
     marginX: 0.11,
     upperY: 0.2,
     lowerY: 0.62,
@@ -648,8 +648,8 @@ const DENTAL_TEMPLATES: DentalTemplate[] = [
   },
   {
     id: 'anterior-focus',
-    label: '?꾩튂遺 ?대줈利덉뾽',
-    description: '?욌땲 ?곸뿭??以묒떖?쇰줈 ?좊챸??蹂묐? 諛섏쁺',
+    label: 'Anterior Focus',
+    description: 'Front-tooth focused view ideal for incisors and canine edits.',
     marginX: 0.1,
     upperY: 0.22,
     lowerY: 0.56,
@@ -669,8 +669,8 @@ const DENTAL_TEMPLATES: DentalTemplate[] = [
   },
   {
     id: 'molar-focus',
-    label: '援ъ튂遺 ?대줈利덉뾽',
-    description: '援ъ튂遺 以묒떖?쇰줈 ?뉖じ ?곗옣?좉낵 移섏? 寃쎄퀎 ?뺣젹',
+    label: 'Molar Focus',
+    description: 'Posterior molar-focused layout for chewing area treatment simulation.',
     marginX: 0.1,
     upperY: 0.24,
     lowerY: 0.56,
@@ -690,8 +690,8 @@ const DENTAL_TEMPLATES: DentalTemplate[] = [
   },
   {
     id: 'full-open',
-    label: '媛쒕갑 ??대뱶',
-    description: '媛쒕갑?낆뿉???곹븯???숈떆 ?쒖떆??理쒖쟻??,
+    label: 'Full Open',
+    description: 'Fully open profile with consistent visibility and expanded posterior gap.',
     marginX: 0.09,
     upperY: 0.16,
     lowerY: 0.64,
@@ -711,8 +711,8 @@ const DENTAL_TEMPLATES: DentalTemplate[] = [
   },
   {
     id: 'upper-only',
-    label: '?곸븙 ?⑤룆',
-    description: '?곸븙 移섏뿴留?吏묒쨷 諛곗튂, ?섏븙 媛꾩꽠??以꾩뿬 ?꾩긽 ?ъ씤???쒓린',
+    label: 'Upper Only',
+    description: 'Only upper jaw context with minimal lower jaw structure in the frame.',
     marginX: 0.11,
     upperY: 0.23,
     lowerY: 0.9,
@@ -732,8 +732,8 @@ const DENTAL_TEMPLATES: DentalTemplate[] = [
   },
   {
     id: 'lower-only',
-    label: '?섏븙 ?⑤룆',
-    description: '?섏븙 移섏뿴留?吏묒쨷 諛곗튂, ?곸븙 媛꾩꽠??以꾩뿬 ?꾩긽 ?ъ씤???쒓린',
+    label: 'Lower Only',
+    description: 'Only lower jaw context with minimal upper jaw structure in the frame.',
     marginX: 0.11,
     upperY: 0.88,
     lowerY: 0.58,
@@ -871,7 +871,7 @@ const TEMPLATE_CONTROL_PRESETS: Record<TemplateId, TemplateControlDefaults> = {
 const TEMPLATE_GROUPS: TemplateGroup[] = [
   {
     id: 'all',
-    label: '?꾩껜 ?쒗뵆由?,
+    label: 'All Templates',
     templateIds: [
       'closed-mouth',
       'partly-open',
@@ -891,17 +891,17 @@ const TEMPLATE_GROUPS: TemplateGroup[] = [
   },
   {
     id: 'opening',
-    label: '??踰뚮┝',
+    label: 'Opening',
     templateIds: ['closed-mouth', 'partly-open', 'slightly-open', 'semi-open', 'wide-open', 'very-open', 'ultra-open', 'full-open'],
   },
   {
     id: 'focus',
-    label: '遺??吏묒쨷',
+    label: 'Focus',
     templateIds: ['upper-focus', 'lower-focus', 'anterior-focus', 'molar-focus'],
   },
   {
     id: 'arch',
-    label: '遺?꾨퀎 ?꾩튂',
+    label: 'Arch',
     templateIds: ['upper-only', 'lower-only'],
   },
 ]
@@ -2029,7 +2029,7 @@ export default function SketchImageGenerator({ onGenerated }: SketchImageGenerat
                 >
                   ?좏깮 移섏븘 珥덇린??                </button>
                 <span className="text-xs text-gray-500">
-                  紐⑤뱶: {inputMode === 'tooth-select' ? '移섏븘 ?대┃?쇰줈 ?좏깮' : '?먯쑀 ?쒕줈??}
+                  Mode: {inputMode === 'tooth-select' ? 'Tooth select mode' : 'Drawing mode'}
                 </span>
               </div>
               {selectedTeeth.length > 0 ? (
