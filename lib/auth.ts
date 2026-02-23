@@ -1,4 +1,4 @@
-import { NextAuthOptions } from 'next-auth'
+﻿import { NextAuthOptions } from 'next-auth'
 import CredentialsProvider from 'next-auth/providers/credentials'
 import { createHash } from 'crypto'
 
@@ -6,6 +6,30 @@ const fallbackSecret = createHash('sha256')
   .update(process.env.NEXTAUTH_URL ?? 'https://dental-blog.vercel.app')
   .update('fallback-next-auth-secret')
   .digest('hex')
+
+const fallbackAllowedUsers = 'blog:123456'
+
+function parseAllowedUsers(raw: string): { email: string; password: string }[] {
+  return raw
+    .split(/[\n,]+/)
+    .map((user) => user.trim())
+    .filter(Boolean)
+    .map((user) => {
+      const separatorIndex = user.indexOf(':')
+      if (separatorIndex < 0) {
+        return null
+      }
+
+      const email = user.slice(0, separatorIndex).trim()
+      const password = user.slice(separatorIndex + 1).trim()
+      if (!email || !password) {
+        return null
+      }
+
+      return { email, password }
+    })
+    .filter((user): user is { email: string; password: string } => user !== null)
+}
 
 export const authOptions: NextAuthOptions = {
   secret: process.env.NEXTAUTH_SECRET ?? fallbackSecret,
@@ -21,18 +45,12 @@ export const authOptions: NextAuthOptions = {
           return null
         }
 
-        // 환경변수에서 허용된 사용자 목록 가져오기
-        const allowedUsers = process.env.ALLOWED_USERS || ''
-        const users = allowedUsers.split(',').map((user) => {
-          const [email, password] = user.trim().split(':')
-          return { email, password }
-        })
+        const allowedUsersRaw = process.env.ALLOWED_USERS?.trim() || fallbackAllowedUsers
+        const users = parseAllowedUsers(allowedUsersRaw)
+        const email = credentials.email.trim()
+        const password = credentials.password
 
-        // 사용자 확인
-        const user = users.find(
-          (u) =>
-            u.email === credentials.email && u.password === credentials.password
-        )
+        const user = users.find((u) => u.email === email && u.password === password)
 
         if (user) {
           return {

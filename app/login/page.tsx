@@ -1,6 +1,6 @@
-'use client'
+﻿'use client'
 
-import { useState, useEffect } from 'react'
+import { FormEvent, useEffect, useState } from 'react'
 import { signIn } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import IntroAnimation from '@/components/IntroAnimation'
@@ -16,7 +16,6 @@ export default function LoginPage() {
   const [introChecked, setIntroChecked] = useState(false)
   const router = useRouter()
 
-  // 인트로 표시 여부 확인
   useEffect(() => {
     const hasSeenIntro = localStorage.getItem(INTRO_SHOWN_KEY)
     if (!hasSeenIntro) {
@@ -30,27 +29,31 @@ export default function LoginPage() {
     setShowIntro(false)
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleSubmit = async (event: FormEvent) => {
+    event.preventDefault()
     setLoading(true)
     setError('')
 
-    const result = await signIn('credentials', {
-      email,
-      password,
-      redirect: false,
-    })
+    try {
+      const result = await signIn('credentials', {
+        email,
+        password,
+        redirect: false,
+      })
 
-    setLoading(false)
+      if (result?.error) {
+        setError('아이디 또는 비밀번호가 올바르지 않습니다.')
+        return
+      }
 
-    if (result?.error) {
-      setError('아이디 또는 비밀번호가 올바르지 않습니다.')
-    } else {
       router.push('/dashboard')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '로그인에 실패했습니다. 다시 시도해 주세요.')
+    } finally {
+      setLoading(false)
     }
   }
 
-  // 인트로 확인 전에는 빈 화면
   if (!introChecked) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-600 via-primary-500 to-blue-500">
@@ -61,11 +64,13 @@ export default function LoginPage() {
 
   return (
     <>
-      {/* 인트로 애니메이션 */}
       {showIntro && <IntroAnimation onComplete={handleIntroComplete} />}
 
-      {/* 로그인 폼 */}
-      <div className={`min-h-screen flex items-center justify-center bg-gray-50 transition-opacity duration-500 ${showIntro ? 'opacity-0' : 'opacity-100'}`}>
+      <div
+        className={`min-h-screen flex items-center justify-center bg-gray-50 transition-opacity duration-500 ${
+          showIntro ? 'opacity-0' : 'opacity-100'
+        }`}
+      >
         <div className="max-w-md w-full space-y-8 p-8 bg-white rounded-xl shadow-lg">
           <div>
             <div className="flex justify-center mb-4">
@@ -73,20 +78,12 @@ export default function LoginPage() {
                 <span className="text-4xl">🦷</span>
               </div>
             </div>
-            <h1 className="text-3xl font-bold text-center text-gray-900">
-              치과 블로그 글 작성기
-            </h1>
-            <p className="mt-2 text-center text-gray-600">
-              팀 계정으로 로그인하세요
-            </p>
+            <h1 className="text-3xl font-bold text-gray-900 text-center">치과 블로그 글 작성기</h1>
+            <p className="mt-2 text-center text-gray-600">계정으로 로그인해 계속 진행하세요.</p>
           </div>
 
           <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-            {error && (
-              <div className="bg-red-50 text-red-500 p-3 rounded-lg text-sm">
-                {error}
-              </div>
-            )}
+            {error && <div className="bg-red-50 text-red-500 p-3 rounded-lg text-sm">{error}</div>}
 
             <div className="space-y-4">
               <div>
@@ -101,10 +98,9 @@ export default function LoginPage() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                  placeholder="아이디 입력"
+                  placeholder="아이디를 입력하세요"
                 />
               </div>
-
               <div>
                 <label htmlFor="password" className="block text-sm font-medium text-gray-700">
                   비밀번호
@@ -117,7 +113,7 @@ export default function LoginPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                  placeholder="••••••••"
+                  placeholder="비밀번호를 입력하세요"
                 />
               </div>
             </div>
@@ -130,16 +126,6 @@ export default function LoginPage() {
               {loading ? '로그인 중...' : '로그인'}
             </button>
           </form>
-
-          {/* 기능 소개 */}
-          <div className="mt-6 pt-6 border-t border-gray-100">
-            <p className="text-xs text-center text-gray-500 mb-3">주요 기능</p>
-            <div className="flex justify-center gap-4 text-xs text-gray-600">
-              <span>⚖️ 의료법 준수</span>
-              <span>🔍 SEO 최적화</span>
-              <span>🤖 AI 작성</span>
-            </div>
-          </div>
         </div>
       </div>
     </>
