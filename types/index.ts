@@ -133,25 +133,37 @@ export interface ResearchResult {
 }
 
 // 이미지 편집기 도구 타입
-export type EditorTool = 'select' | 'arrow' | 'dottedLine' | 'text' | 'ellipse' | 'freeLine' | 'crop' | 'blurBrush' | 'mosaicBrush'
+export type EditorTool = 'select' | 'arrow' | 'dottedLine' | 'text' | 'ellipse' | 'freeLine' | 'crop' | 'blurBrush'
+  | 'mosaicBrush'
+  | 'grayscaleBrush'
+  | 'aiEraseBrush'
+  | 'magnifier'
 
 // 이미지 편집기 어노테이션 아이템
 export interface AnnotationItem {
   id: string
   type:
-    | 'arrow'
-    | 'dottedLine'
-    | 'text'
-    | 'logo'
-    | 'ellipse'
-    | 'freeLine'
-    | 'privacyBlur'
-    | 'privacyMosaic'
+  | 'arrow'
+  | 'dottedLine'
+  | 'text'
+  | 'logo'
+  | 'image'
+  | 'ellipse'
+  | 'freeLine'
+  | 'privacyBlur'
+  | 'privacyMosaic'
+  | 'grayscaleBrush'
+  | 'aiEraseBrush'
+  | 'magnifier'
   x: number
   y: number
   points?: number[]        // arrow/dottedLine: [x1,y1,x2,y2]
   text?: string
   fontSize?: number
+  fontFamily?: string
+  fontStyle?: 'normal' | 'italic'
+  fontWeight?: 'normal' | 'bold'
+  textDecoration?: 'none' | 'underline' | 'line-through'
   stroke?: string
   fill?: string
   strokeWidth?: number

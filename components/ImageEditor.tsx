@@ -2,7 +2,7 @@
 
 
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
-import { Stage, Layer, Arrow, Line, Text, Image as KonvaImage, Transformer, Ellipse, Rect } from 'react-konva'
+import { Stage, Layer, Arrow, Line, Text, Image as KonvaImage, Transformer, Ellipse, Rect, Group } from 'react-konva'
 import Konva from 'konva'
 import { AnnotationItem, EditorTool } from '@/types'
 import ImageEditorToolbar from './ImageEditorToolbar'
@@ -10,16 +10,18 @@ import GifExporter from './GifExporter'
 
 type CropRect = { x: number; y: number; w: number; h: number }
 type AllItem = AnnotationItem
-type PrivacyItemType = 'privacyBlur' | 'privacyMosaic'
+type PrivacyItemType = 'privacyBlur' | 'privacyMosaic' | 'grayscaleBrush'
 type PrivacySnapshotItem = {
   index: number
   item: AllItem
 }
 const FILTER_DEBOUNCE_MS = 180
 const MIN_CROP_SIZE = 20
-const DEFAULT_PRIVACY_BRUSH_SIZE: Record<'blurBrush' | 'mosaicBrush', number> = {
+const DEFAULT_PRIVACY_BRUSH_SIZE: Record<'blurBrush' | 'mosaicBrush' | 'grayscaleBrush' | 'aiEraseBrush', number> = {
   blurBrush: 48,
   mosaicBrush: 56,
+  grayscaleBrush: 48,
+  aiEraseBrush: 48,
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -63,11 +65,14 @@ function itemLabel(item: AllItem): string {
   if (item.type === 'freeLine') return '펜'
   if (item.type === 'privacyBlur') return '블러(개인정보)'
   if (item.type === 'privacyMosaic') return '모자이크(개인정보)'
+  if (item.type === 'grayscaleBrush') return '부분 흑백'
+  if (item.type === 'aiEraseBrush') return 'AI 지우개'
+  if (item.type === 'magnifier') return '돋보기'
   return '항목'
 }
 
 function isPrivacyItemType(type: AllItem['type']) {
-  return type === 'privacyBlur' || type === 'privacyMosaic'
+  return type === 'privacyBlur' || type === 'privacyMosaic' || type === 'grayscaleBrush' || type === 'aiEraseBrush'
 }
 
 function shiftedPoints(points: number[], dx: number, dy: number): number[] {
@@ -131,6 +136,20 @@ function absoluteStrokePoints(item: AllItem): number[] {
   return shiftedPoints(item.points, item.x ?? 0, item.y ?? 0)
 }
 
+function createBlankImage(width: number, height: number): Promise<HTMLImageElement> {
+  return new Promise((resolve) => {
+    const canvas = document.createElement('canvas')
+    canvas.width = width
+    canvas.height = height
+    const ctx = canvas.getContext('2d')
+    if (ctx) {
+      ctx.fillStyle = '#ffffff'
+      ctx.fillRect(0, 0, width, height)
+    }
+    resolve(loadImage(canvas.toDataURL('image/png')))
+  })
+}
+
 function drawPrivacyStrokeOnCanvas(
   ctx: CanvasRenderingContext2D,
   item: AllItem,
@@ -138,7 +157,7 @@ function drawPrivacyStrokeOnCanvas(
   sy: number,
   fallbackSize: number,
 ) {
-  if (item.type !== 'privacyBlur' && item.type !== 'privacyMosaic') return
+  if (item.type !== 'privacyBlur' && item.type !== 'privacyMosaic' && item.type !== 'grayscaleBrush') return
   if (!item.points || item.points.length < 2) return
 
   const strokePoints = absoluteStrokePoints(item)
@@ -195,6 +214,7 @@ export default function ImageEditor({ initialBgDataUrl }: ImageEditorProps) {
   const stageRef = useRef<Konva.Stage>(null)
   const transformerRef = useRef<Konva.Transformer>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const imagesInputRef = useRef<HTMLInputElement>(null)
   const logoInputRef = useRef<HTMLInputElement>(null)
 
   const [canvasSize, setCanvasSize] = useState({ w: 900, h: 600 })
@@ -217,6 +237,8 @@ export default function ImageEditor({ initialBgDataUrl }: ImageEditorProps) {
   const [privacyBrushSizeByTool, setPrivacyBrushSizeByTool] = useState({
     blurBrush: DEFAULT_PRIVACY_BRUSH_SIZE.blurBrush,
     mosaicBrush: DEFAULT_PRIVACY_BRUSH_SIZE.mosaicBrush,
+    grayscaleBrush: DEFAULT_PRIVACY_BRUSH_SIZE.grayscaleBrush,
+    aiEraseBrush: DEFAULT_PRIVACY_BRUSH_SIZE.aiEraseBrush,
   })
   const [bgRotation, setBgRotation] = useState(0)
   const [bgFlipX, setBgFlipX] = useState(false)
@@ -277,6 +299,7 @@ export default function ImageEditor({ initialBgDataUrl }: ImageEditorProps) {
   const [isDrawing, setIsDrawing] = useState(false)
   const [drawStart, setDrawStart] = useState<{ x: number; y: number } | null>(null)
   const [drawingId, setDrawingId] = useState<string | null>(null)
+  const [isErasing, setIsErasing] = useState(false)
   const [cropRect, setCropRect] = useState<CropRect | null>(null)
   const [cropError, setCropError] = useState('')
   const [showGifModal, setShowGifModal] = useState(false)
@@ -399,8 +422,34 @@ export default function ImageEditor({ initialBgDataUrl }: ImageEditorProps) {
 
       const privacyBlurItems = items.filter(item => item.type === 'privacyBlur')
       const privacyMosaicItems = items.filter(item => item.type === 'privacyMosaic')
+      const grayscaleBrushItems = items.filter(item => item.type === 'grayscaleBrush')
       const sx = w / Math.max(1, canvasSize.w)
       const sy = h / Math.max(1, canvasSize.h)
+
+      if (grayscaleBrushItems.length > 0) {
+        const grayscaleCanvas = document.createElement('canvas')
+        grayscaleCanvas.width = w
+        grayscaleCanvas.height = h
+        const grayscaleCtx = grayscaleCanvas.getContext('2d')
+
+        if (grayscaleCtx) {
+          grayscaleCtx.filter = 'grayscale(100%)'
+          grayscaleCtx.drawImage(sourceCanvas, 0, 0, w, h)
+          grayscaleCtx.filter = 'none'
+        }
+
+        const grayscaleMask = document.createElement('canvas')
+        grayscaleMask.width = w
+        grayscaleMask.height = h
+        const grayscaleMaskCtx = grayscaleMask.getContext('2d')
+        if (grayscaleMaskCtx) {
+          grayscaleMaskCtx.clearRect(0, 0, w, h)
+          grayscaleBrushItems.forEach((item) => {
+            drawPrivacyStrokeOnCanvas(grayscaleMaskCtx, item, sx, sy, privacyBrushSize)
+          })
+          mergeMaskedLayer(ctx, grayscaleCanvas, grayscaleMask)
+        }
+      }
 
       if (privacyBlurItems.length > 0) {
         const blurCanvas = document.createElement('canvas')
@@ -587,6 +636,72 @@ export default function ImageEditor({ initialBgDataUrl }: ImageEditorProps) {
     setPrivacyFuture([])
   }, [getPrivacySnapshot])
 
+  const handleAIErase = useCallback(async () => {
+    const eraseItems = items.filter(item => item.type === 'aiEraseBrush')
+    if (eraseItems.length === 0 || !bgImage) return
+
+    setIsErasing(true)
+    try {
+      const w = bgImage.naturalWidth
+      const h = bgImage.naturalHeight
+
+      // 1. Get original image data URL
+      const sourceCanvas = document.createElement('canvas')
+      sourceCanvas.width = w
+      sourceCanvas.height = h
+      const ctx = sourceCanvas.getContext('2d')
+      if (!ctx) throw new Error('Failed to create canvas')
+      ctx.drawImage(bgImage, 0, 0, w, h)
+      const imageBase64 = sourceCanvas.toDataURL('image/png')
+
+      // 2. Create mask
+      const maskCanvas = document.createElement('canvas')
+      maskCanvas.width = w
+      maskCanvas.height = h
+      const maskCtx = maskCanvas.getContext('2d')
+      if (!maskCtx) throw new Error('Failed to create mask canvas')
+
+      maskCtx.fillStyle = 'black'
+      maskCtx.fillRect(0, 0, w, h)
+
+      const sx = w / Math.max(1, canvasSize.w)
+      const sy = h / Math.max(1, canvasSize.h)
+
+      eraseItems.forEach((item) => {
+        drawPrivacyStrokeOnCanvas(maskCtx, item, sx, sy, privacyBrushSize)
+      })
+
+      const maskBase64 = maskCanvas.toDataURL('image/png')
+
+      // 3. Call API
+      const res = await fetch('/api/inpaint', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: imageBase64, mask: maskBase64 })
+      })
+
+      if (!res.ok) {
+        throw new Error(await res.text())
+      }
+
+      const json = await res.json()
+      if (json.erasedImage) {
+        // Load new image
+        const newImage = await loadImage(json.erasedImage)
+
+        // Update background
+        setBgImage(newImage)
+        // And clear the erase brushes
+        setItems(prev => prev.filter(item => item.type !== 'aiEraseBrush'))
+      }
+
+    } catch (err: any) {
+      alert('AI 지우개 실행 중 오류가 발생했습니다: ' + err.message)
+    } finally {
+      setIsErasing(false)
+    }
+  }, [items, bgImage, privacyBrushSize, canvasSize.w, canvasSize.h, setBgImage])
+
   const handleUndo = useCallback(() => {
     setHistory((prev) => {
       if (!prev.length) return prev
@@ -624,15 +739,19 @@ export default function ImageEditor({ initialBgDataUrl }: ImageEditorProps) {
     fileInputRef.current?.click()
   }, [])
 
+  const handleAddImages = useCallback(() => {
+    imagesInputRef.current?.click()
+  }, [])
+
   const onImageFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
 
-      const reader = new FileReader()
-      reader.onload = async () => {
-        const url = reader.result as string
-        setBgDataUrl(url)
-        setIsGrayscale(false)
+    const reader = new FileReader()
+    reader.onload = async () => {
+      const url = reader.result as string
+      setBgDataUrl(url)
+      setIsGrayscale(false)
       setIsBlur(false)
       setBlurRadius(4)
       setBrightness(100)
@@ -641,16 +760,16 @@ export default function ImageEditor({ initialBgDataUrl }: ImageEditorProps) {
       setBgRotation(0)
       setBgFlipX(false)
       setBgFlipY(false)
-        const img = await loadImage(url)
-        setBgImage(img)
-        setFilteredBgImage(null)
-        setItems([])
-        clearHistory()
-        clearPrivacyHistory()
-        setSelectedId(null)
-        setCropRect(null)
-        setTool('select')
-      }
+      const img = await loadImage(url)
+      setBgImage(img)
+      setFilteredBgImage(null)
+      setItems([])
+      clearHistory()
+      clearPrivacyHistory()
+      setSelectedId(null)
+      setCropRect(null)
+      setTool('select')
+    }
     reader.readAsDataURL(file)
     e.target.value = ''
   }, [])
@@ -658,6 +777,65 @@ export default function ImageEditor({ initialBgDataUrl }: ImageEditorProps) {
   const handleUploadLogo = useCallback(() => {
     logoInputRef.current?.click()
   }, [])
+
+  const onImagesFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || [])
+    if (!files.length) return
+
+    let currentBg = bgImage
+    if (!currentBg) {
+      currentBg = await createBlankImage(canvasSize.w, canvasSize.h)
+      setBgImage(currentBg)
+      setBgDataUrl(currentBg.src)
+      setIsGrayscale(false)
+      setIsBlur(false)
+      setBlurRadius(4)
+      setBrightness(100)
+      setContrast(100)
+      setMosaicSize(0)
+      setBgRotation(0)
+      setBgFlipX(false)
+      setBgFlipY(false)
+      setFilteredBgImage(null)
+    }
+
+    pushHistory()
+    const newItems: AllItem[] = []
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i]
+      if (!file) continue
+      const url = await new Promise<string>((resolve) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(reader.result as string)
+        reader.readAsDataURL(file)
+      })
+      const img = await loadImage(url)
+      setLogoImageCache(prev => ({ ...prev, [url]: img }))
+
+      let w = img.naturalWidth
+      let h = img.naturalHeight
+      const maxW = canvasSize.w * 0.4
+      if (w > maxW) {
+        h = (h * maxW) / w
+        w = maxW
+      }
+
+      newItems.push({
+        id: uid(),
+        type: 'image',
+        x: Math.min(50 + (i * 30), canvasSize.w - maxW),
+        y: Math.min(50 + (i * 30), canvasSize.h - maxW),
+        width: w,
+        height: h,
+        imageUrl: url,
+        name: `사진 ${i + 1}`,
+        opacity: 1,
+      })
+    }
+
+    setItems(prev => [...prev, ...newItems])
+    e.target.value = ''
+  }, [bgImage, canvasSize.w, canvasSize.h, pushHistory])
 
   const onLogoFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -820,8 +998,8 @@ export default function ImageEditor({ initialBgDataUrl }: ImageEditorProps) {
         const nextFontSize = Math.max(10, Math.round((item.fontSize ?? 24) * Math.max(sx, sy)))
 
         if (typeof (node as Konva.Node).scaleX === 'function') {
-          ;(node as Konva.Node as any).scaleX(1)
-          ;(node as Konva.Node as any).scaleY(1)
+          ; (node as Konva.Node as any).scaleX(1)
+            ; (node as Konva.Node as any).scaleY(1)
         }
 
         return {
@@ -851,7 +1029,12 @@ export default function ImageEditor({ initialBgDataUrl }: ImageEditorProps) {
     const sourceCtx = source.getContext('2d')
     if (!sourceCtx) return
 
-    sourceCtx.drawImage(displayImage, 0, 0, canvasSize.w, canvasSize.h)
+    sourceCtx.save()
+    sourceCtx.translate(canvasSize.w / 2, canvasSize.h / 2)
+    sourceCtx.rotate((bgRotation * Math.PI) / 180)
+    sourceCtx.scale(bgFlipX ? -1 : 1, bgFlipY ? -1 : 1)
+    sourceCtx.drawImage(displayImage, -canvasSize.w / 2, -canvasSize.h / 2, canvasSize.w, canvasSize.h)
+    sourceCtx.restore()
 
     const result = document.createElement('canvas')
     result.width = previewCrop.w
@@ -1012,8 +1195,8 @@ export default function ImageEditor({ initialBgDataUrl }: ImageEditorProps) {
       return
     }
 
-    if (tool === 'blurBrush' || tool === 'mosaicBrush') {
-      const privacyType = tool === 'blurBrush' ? 'privacyBlur' : 'privacyMosaic'
+    if (tool === 'blurBrush' || tool === 'mosaicBrush' || tool === 'grayscaleBrush' || tool === 'aiEraseBrush') {
+      const privacyType = tool === 'blurBrush' ? 'privacyBlur' : tool === 'mosaicBrush' ? 'privacyMosaic' : tool === 'grayscaleBrush' ? 'grayscaleBrush' : 'aiEraseBrush'
       pushPrivacyHistory()
       const id = uid()
       const item: AllItem = {
@@ -1024,7 +1207,7 @@ export default function ImageEditor({ initialBgDataUrl }: ImageEditorProps) {
         points: [0, 0],
         strokeWidth: privacyBrushSize,
         opacity: 1,
-        name: tool === 'blurBrush' ? '블러 마스킹' : '모자이크 마스킹',
+        name: tool === 'blurBrush' ? '블러 마스킹' : tool === 'mosaicBrush' ? '모자이크 마스킹' : tool === 'grayscaleBrush' ? '부분 흑백' : 'AI 지우개',
       }
       pushHistory()
       setDrawingId(id)
@@ -1047,10 +1230,10 @@ export default function ImageEditor({ initialBgDataUrl }: ImageEditorProps) {
 
     let item: AllItem
     const id = uid()
-    if (tool === 'ellipse') {
+    if (tool === 'ellipse' || tool === 'magnifier') {
       item = {
         id,
-        type: 'ellipse',
+        type: tool,
         x,
         y,
         width: 1,
@@ -1058,7 +1241,7 @@ export default function ImageEditor({ initialBgDataUrl }: ImageEditorProps) {
         stroke: strokeColor,
         strokeWidth,
         opacity: 1,
-        name: '타원',
+        name: tool === 'magnifier' ? '돋보기' : '타원',
       }
     } else if (tool === 'freeLine') {
       item = {
@@ -1142,7 +1325,7 @@ export default function ImageEditor({ initialBgDataUrl }: ImageEditorProps) {
         }
       }
 
-      if (item.type === 'privacyBlur' || item.type === 'privacyMosaic') {
+      if (item.type === 'privacyBlur' || item.type === 'privacyMosaic' || item.type === 'grayscaleBrush' || item.type === 'aiEraseBrush') {
         const baseX = item.x ?? 0
         const baseY = item.y ?? 0
         return {
@@ -1151,7 +1334,7 @@ export default function ImageEditor({ initialBgDataUrl }: ImageEditorProps) {
         }
       }
 
-      if (item.type === 'ellipse') {
+      if (item.type === 'ellipse' || item.type === 'magnifier') {
         return {
           ...item,
           width: pos.x - (item.x || 0),
@@ -1193,11 +1376,11 @@ export default function ImageEditor({ initialBgDataUrl }: ImageEditorProps) {
         return (item.points ?? []).length >= 4 ? item : null
       }
 
-      if (item.type === 'privacyBlur' || item.type === 'privacyMosaic') {
+      if (item.type === 'privacyBlur' || item.type === 'privacyMosaic' || item.type === 'grayscaleBrush' || item.type === 'aiEraseBrush') {
         return (item.points ?? []).length >= 2 ? item : null
       }
 
-      if (item.type === 'ellipse') {
+      if (item.type === 'ellipse' || item.type === 'magnifier') {
         return Math.abs(item.width ?? 0) >= 4 && Math.abs(item.height ?? 0) >= 4 ? item : null
       }
 
@@ -1231,20 +1414,20 @@ export default function ImageEditor({ initialBgDataUrl }: ImageEditorProps) {
 
   const handleSetTool = useCallback((nextTool: EditorTool) => {
     setTool(nextTool)
-    if (nextTool === 'blurBrush' || nextTool === 'mosaicBrush') {
+    if (nextTool === 'blurBrush' || nextTool === 'mosaicBrush' || nextTool === 'grayscaleBrush' || nextTool === 'aiEraseBrush') {
       setPrivacyBrushSize(privacyBrushSizeByTool[nextTool])
     }
   }, [privacyBrushSizeByTool])
 
   useEffect(() => {
-    if (tool !== 'blurBrush' && tool !== 'mosaicBrush') return
+    if (tool !== 'blurBrush' && tool !== 'mosaicBrush' && tool !== 'grayscaleBrush' && tool !== 'aiEraseBrush') return
 
     setPrivacyBrushSize(privacyBrushSizeByTool[tool])
-  }, [tool])
+  }, [tool, privacyBrushSizeByTool])
 
   const handlePrivacyBrushSize = useCallback((nextSize: number) => {
     setPrivacyBrushSize(nextSize)
-    if (tool === 'blurBrush' || tool === 'mosaicBrush') {
+    if (tool === 'blurBrush' || tool === 'mosaicBrush' || tool === 'grayscaleBrush' || tool === 'aiEraseBrush') {
       setPrivacyBrushSizeByTool(prev => ({
         ...prev,
         [tool]: nextSize,
@@ -1258,7 +1441,7 @@ export default function ImageEditor({ initialBgDataUrl }: ImageEditorProps) {
   }, [onStageMouseUp])
 
   useEffect(() => {
-    if (tool !== 'blurBrush' && tool !== 'mosaicBrush') {
+    if (tool !== 'blurBrush' && tool !== 'mosaicBrush' && tool !== 'grayscaleBrush' && tool !== 'aiEraseBrush') {
       setBrushCursor(null)
     }
   }, [tool])
@@ -1291,6 +1474,70 @@ export default function ImageEditor({ initialBgDataUrl }: ImageEditorProps) {
     transformer.getLayer()?.batchDraw()
   }, [items, canTransformNode, selectedId])
 
+  const handleApplyCollage = useCallback((layoutType: 'grid2x2' | 'splitH' | 'splitV') => {
+    const imageItems = itemsRef.current.filter(item => item.type === 'image')
+    const imgCount = imageItems.length
+    if (imgCount === 0) return
+
+    pushHistory()
+    const nextItems = [...itemsRef.current]
+    const W = canvasSize.w
+    const H = canvasSize.h
+    const padding = 20
+
+    if (layoutType === 'splitH' && imgCount >= 2) {
+      const id1 = imageItems[0]?.id
+      const id2 = imageItems[1]?.id
+      const i1 = nextItems.findIndex(i => i.id === id1)
+      const i2 = nextItems.findIndex(i => i.id === id2)
+
+      const boxW = (W - padding * 3) / 2
+      const boxH = H - padding * 2
+
+      if (i1 >= 0 && nextItems[i1]) {
+        nextItems[i1] = { ...nextItems[i1], x: padding, y: padding, width: boxW, height: boxH }
+      }
+      if (i2 >= 0 && nextItems[i2]) {
+        nextItems[i2] = { ...nextItems[i2], x: padding * 2 + boxW, y: padding, width: boxW, height: boxH }
+      }
+    } else if (layoutType === 'splitV' && imgCount >= 2) {
+      const id1 = imageItems[0]?.id
+      const id2 = imageItems[1]?.id
+      const i1 = nextItems.findIndex(i => i.id === id1)
+      const i2 = nextItems.findIndex(i => i.id === id2)
+
+      const boxW = W - padding * 2
+      const boxH = (H - padding * 3) / 2
+
+      if (i1 >= 0 && nextItems[i1]) {
+        nextItems[i1] = { ...nextItems[i1], x: padding, y: padding, width: boxW, height: boxH }
+      }
+      if (i2 >= 0 && nextItems[i2]) {
+        nextItems[i2] = { ...nextItems[i2], x: padding, y: padding * 2 + boxH, width: boxW, height: boxH }
+      }
+    } else if (layoutType === 'grid2x2' && imgCount >= 4) {
+      for (let idx = 0; idx < 4; idx++) {
+        const id = imageItems[idx]?.id
+        const i = nextItems.findIndex(item => item.id === id)
+        if (i >= 0 && nextItems[i]) {
+          const row = Math.floor(idx / 2)
+          const col = idx % 2
+          const boxW = (W - padding * 3) / 2
+          const boxH = (H - padding * 3) / 2
+          nextItems[i] = {
+            ...nextItems[i],
+            x: padding + col * (boxW + padding),
+            y: padding + row * (boxH + padding),
+            width: boxW,
+            height: boxH
+          }
+        }
+      }
+    }
+
+    setItems(nextItems)
+  }, [canvasSize.h, canvasSize.w, pushHistory])
+
   return (
     <div className="space-y-4">
       <ImageEditorToolbar
@@ -1317,6 +1564,8 @@ export default function ImageEditor({ initialBgDataUrl }: ImageEditorProps) {
         mosaicSize={mosaicSize}
         setMosaicSize={setMosaicSize}
         onUploadImage={handleUploadImage}
+        onAddImages={handleAddImages}
+        onApplyCollage={handleApplyCollage}
         onUploadLogo={handleUploadLogo}
         onUndo={handleUndo}
         onRedo={handleRedo}
@@ -1386,9 +1635,9 @@ export default function ImageEditor({ initialBgDataUrl }: ImageEditorProps) {
                     onTransformEnd: (e: Konva.KonvaEventObject<Event>) => handleTransformEnd(item.id, e),
                   }
 
-                  if (item.type === 'logo') {
+                  if (item.type === 'logo' || item.type === 'image') {
                     const logoImage = item.imageUrl ? logoImageCache[item.imageUrl] : null
-                    const logoTintKey = item.imageUrl && item.fill ? `${item.imageUrl}|${item.fill}` : null
+                    const logoTintKey = item.imageUrl && item.fill && item.type === 'logo' ? `${item.imageUrl}|${item.fill}` : null
                     const renderedLogo = logoTintKey ? logoTintImageCache[logoTintKey] : null
                     const finalImage = renderedLogo ?? logoImage
                     if (!finalImage) return null
@@ -1408,6 +1657,13 @@ export default function ImageEditor({ initialBgDataUrl }: ImageEditorProps) {
                   }
 
                   if (item.type === 'text') {
+                    const isBold = item.fontWeight === 'bold'
+                    const isItalic = item.fontStyle === 'italic'
+                    let konvaFontStyle = 'normal'
+                    if (isBold && isItalic) konvaFontStyle = 'italic bold'
+                    else if (isBold) konvaFontStyle = 'bold'
+                    else if (isItalic) konvaFontStyle = 'italic'
+
                     return (
                       <Text
                         key={item.id}
@@ -1415,7 +1671,9 @@ export default function ImageEditor({ initialBgDataUrl }: ImageEditorProps) {
                         text={item.text || ''}
                         fill={item.fill || item.stroke || '#000'}
                         fontSize={item.fontSize ?? 24}
-                        fontFamily="Arial"
+                        fontFamily={item.fontFamily ?? 'Arial'}
+                        fontStyle={konvaFontStyle}
+                        textDecoration={item.textDecoration === 'underline' ? 'underline' : item.textDecoration === 'line-through' ? 'line-through' : ''}
                         onDblClick={() => editTextPrompt(item)}
                         onDblTap={() => editTextPrompt(item)}
                       />
@@ -1468,6 +1726,75 @@ export default function ImageEditor({ initialBgDataUrl }: ImageEditorProps) {
                         stroke={item.stroke ?? '#FF0000'}
                         strokeWidth={item.strokeWidth ?? 3}
                         fill="transparent"
+                      />
+                    )
+                  }
+
+                  if (item.type === 'magnifier') {
+                    const rectW = item.width ?? 120
+                    const rectH = item.height ?? 120
+                    const cx = rectW / 2
+                    const cy = rectH / 2
+                    const rw = Math.max(1, Math.abs(rectW))
+                    const rh = Math.max(1, Math.abs(rectH))
+
+                    const clipFunc = (ctx: any) => {
+                      ctx.beginPath()
+                      ctx.ellipse(cx, cy, rw / 2, rh / 2, 0, 0, Math.PI * 2)
+                      ctx.closePath()
+                    }
+
+                    const magScale = 1.6
+                    const absoluteCx = item.x + cx
+                    const absoluteCy = item.y + cy
+                    const innerX = -absoluteCx * magScale + cx
+                    const innerY = -absoluteCy * magScale + cy
+
+                    return (
+                      <Group
+                        key={item.id}
+                        {...commonProps}
+                        clipFunc={clipFunc}
+                      >
+                        <Rect x={cx - rw / 2} y={cy - rh / 2} width={rw} height={rh} fill="#ffffff" listening={false} />
+                        {displayImage && (
+                          <KonvaImage
+                            image={displayImage}
+                            x={innerX}
+                            y={innerY}
+                            width={canvasSize.w}
+                            height={canvasSize.h}
+                            scaleX={magScale}
+                            scaleY={magScale}
+                            listening={false}
+                          />
+                        )}
+                        <Ellipse
+                          x={cx}
+                          y={cy}
+                          radiusX={rw / 2}
+                          radiusY={rh / 2}
+                          stroke={item.stroke ?? '#3b82f6'}
+                          strokeWidth={item.strokeWidth ?? 4}
+                          listening={false}
+                          shadowColor="#000"
+                          shadowBlur={4}
+                          shadowOpacity={0.3}
+                        />
+                      </Group>
+                    )
+                  }
+
+                  if (item.type === 'aiEraseBrush') {
+                    return (
+                      <Line
+                        key={item.id}
+                        {...commonProps}
+                        points={item.points ?? []}
+                        stroke="rgba(239, 68, 68, 0.5)"
+                        strokeWidth={item.strokeWidth ?? 40}
+                        lineCap="round"
+                        lineJoin="round"
                       />
                     )
                   }
@@ -1529,6 +1856,28 @@ export default function ImageEditor({ initialBgDataUrl }: ImageEditorProps) {
                     왼쪽의 &apos;배경 이미지 업로드&apos; 버튼을 눌러 시작할 수 있습니다.
                   </p>
                 </div>
+              </div>
+            )}
+
+            {items.some(item => item.type === 'aiEraseBrush') && (
+              <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-white rounded-full shadow-lg shadow-black/10 border border-red-200 px-6 py-3 flex items-center gap-4 animate-bounce z-40">
+                <span className="text-sm font-semibold text-red-600">AI 지우개 마스킹 완료</span>
+                <button
+                  type="button"
+                  onClick={handleAIErase}
+                  disabled={isErasing}
+                  className="bg-red-500 hover:bg-red-600 disabled:bg-gray-400 text-white text-sm font-bold px-6 py-2 rounded-full transition-colors shadow-sm"
+                >
+                  {isErasing ? '지우는 중...' : '지우기 실행'}
+                </button>
+              </div>
+            )}
+
+            {isErasing && (
+              <div className="absolute inset-0 bg-white/70 backdrop-blur-sm z-50 flex flex-col items-center justify-center">
+                <div className="w-12 h-12 border-4 border-red-500 border-t-transparent rounded-full animate-spin"></div>
+                <p className="mt-4 font-bold text-gray-800 text-lg">AI가 대상체 구조를 분석하여 지우는 중...</p>
+                <p className="mt-2 text-sm text-gray-500">최대 20초 정도 소요될 수 있습니다.</p>
               </div>
             )}
           </div>
@@ -1636,18 +1985,72 @@ export default function ImageEditor({ initialBgDataUrl }: ImageEditorProps) {
                   />
                 </label>
 
-                {selectedItem.type === 'text' && (
-                  <label className="text-xs text-gray-500 block">
-                    글자 크기
+                {(selectedItem.type === 'image' || selectedItem.type === 'logo') && (
+                  <label className="text-xs text-gray-500 block mb-2">
+                    기울기 조절 (회전)
                     <input
                       type="range"
-                      min={12}
-                      max={96}
-                      value={selectedItem.fontSize ?? 24}
-                      onChange={(e) => updateSelectedItem({ fontSize: Number(e.target.value) })}
-                      className="w-full accent-primary-500"
+                      min={-180}
+                      max={180}
+                      value={selectedItem.rotation ?? 0}
+                      onChange={(e) => updateSelectedItem({ rotation: Number(e.target.value) })}
+                      className="w-full accent-primary-500 mt-1"
                     />
                   </label>
+                )}
+
+                {selectedItem.type === 'text' && (
+                  <>
+                    <label className="text-xs text-gray-500 block">
+                      글자 폰트
+                      <select
+                        value={selectedItem.fontFamily ?? 'Arial'}
+                        onChange={(e) => updateSelectedItem({ fontFamily: e.target.value })}
+                        className="ml-2 w-full mt-1 border border-gray-300 rounded px-2 py-1 text-xs"
+                      >
+                        <option value="Arial">기본 (Arial)</option>
+                        <option value="'Pretendard', sans-serif">프리텐다드</option>
+                        <option value="'210 OmniGothic', sans-serif">단정고딕(옴니)</option>
+                      </select>
+                    </label>
+                    <div className="flex gap-2 mb-2">
+                      <button
+                        type="button"
+                        onClick={() => updateSelectedItem({ fontWeight: selectedItem.fontWeight === 'bold' ? 'normal' : 'bold' })}
+                        className={`flex-1 py-1.5 border rounded text-xs font-bold ${selectedItem.fontWeight === 'bold' ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white hover:bg-gray-50'}`}
+                        title="굵게"
+                      >
+                        B
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => updateSelectedItem({ fontStyle: selectedItem.fontStyle === 'italic' ? 'normal' : 'italic' })}
+                        className={`flex-1 py-1.5 border rounded text-xs italic ${selectedItem.fontStyle === 'italic' ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white hover:bg-gray-50'}`}
+                        title="기울이기"
+                      >
+                        I
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => updateSelectedItem({ textDecoration: selectedItem.textDecoration === 'underline' ? 'none' : 'underline' })}
+                        className={`flex-1 py-1.5 border rounded text-xs underline ${selectedItem.textDecoration === 'underline' ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white hover:bg-gray-50'}`}
+                        title="밑줄"
+                      >
+                        U
+                      </button>
+                    </div>
+                    <label className="text-xs text-gray-500 block">
+                      글자 크기
+                      <input
+                        type="range"
+                        min={12}
+                        max={96}
+                        value={selectedItem.fontSize ?? 24}
+                        onChange={(e) => updateSelectedItem({ fontSize: Number(e.target.value) })}
+                        className="w-full accent-primary-500"
+                      />
+                    </label>
+                  </>
                 )}
 
                 {selectedItem.type === 'dottedLine' && (
@@ -1731,9 +2134,8 @@ export default function ImageEditor({ initialBgDataUrl }: ImageEditorProps) {
                     type="button"
                     onClick={applyCrop}
                     disabled={isCropTooSmall}
-                    className={`flex-1 px-3 py-1.5 text-xs rounded-lg ${
-                      isCropTooSmall ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-blue-500 text-white'
-                    }`}
+                    className={`flex-1 px-3 py-1.5 text-xs rounded-lg ${isCropTooSmall ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-blue-500 text-white'
+                      }`}
                   >
                     적용
                   </button>
@@ -1763,6 +2165,7 @@ export default function ImageEditor({ initialBgDataUrl }: ImageEditorProps) {
       )}
 
       <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={onImageFileChange} />
+      <input type="file" ref={imagesInputRef} className="hidden" accept="image/*" onChange={onImagesFileChange} multiple />
       <input type="file" ref={logoInputRef} className="hidden" accept="image/*" onChange={onLogoFileChange} />
     </div>
   )

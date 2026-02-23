@@ -30,6 +30,8 @@ interface ToolbarProps {
   onClearPrivacy: () => void
   hasAnyPrivacyBrush: boolean
   onUploadImage: () => void
+  onAddImages: () => void
+  onApplyCollage: (type: 'grid2x2' | 'splitH' | 'splitV') => void
   onUploadLogo: () => void
   onUndo: () => void
   onRedo: () => void
@@ -58,6 +60,9 @@ const TOOL_LABELS: Record<EditorTool, string> = {
   freeLine: '펜',
   blurBrush: '블러 마스킹',
   mosaicBrush: '모자이크',
+  grayscaleBrush: '부분 흑백',
+  aiEraseBrush: 'AI 지우개',
+  magnifier: '돋보기',
   crop: '크롭',
 }
 
@@ -89,6 +94,8 @@ export default function ImageEditorToolbar({
   onClearPrivacy,
   hasAnyPrivacyBrush,
   onUploadImage,
+  onAddImages,
+  onApplyCollage,
   onUploadLogo,
   onUndo,
   onRedo,
@@ -111,7 +118,13 @@ export default function ImageEditorToolbar({
   const controlLabel = 'text-xs text-gray-500 w-14 font-medium'
   const privacyPreset = [12, 20, 32, 48, 72]
 
-  const toolButtons: EditorTool[] = ['select', 'arrow', 'dottedLine', 'ellipse', 'freeLine', 'text', 'blurBrush', 'mosaicBrush', 'crop']
+  const toolButtons: EditorTool[] = ['select', 'arrow', 'dottedLine', 'ellipse', 'freeLine', 'text', 'blurBrush',
+    'mosaicBrush',
+    'grayscaleBrush',
+    'aiEraseBrush',
+    'magnifier',
+    'crop',
+  ]
 
   return (
     <div className="bg-gradient-to-r from-slate-50 via-white to-sky-50 border border-sky-200 rounded-2xl p-4 mb-3 space-y-3 shadow-sm">
@@ -121,8 +134,24 @@ export default function ImageEditorToolbar({
           onClick={onUploadImage}
           className={`${btnBase} bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100`}
         >
-          배경 이미지 업로드
+          배경 이미지 전환
         </button>
+        <button
+          type="button"
+          onClick={onAddImages}
+          className={`${btnBase} bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100`}
+        >
+          사진 여러장 추가
+        </button>
+
+        {hasBackground && (
+          <div className="flex items-center gap-1 bg-white p-0.5 rounded-xl border border-gray-200 ml-1">
+            <span className="text-xs text-gray-500 px-2 font-medium">콜라주</span>
+            <button type="button" onClick={() => onApplyCollage('splitH')} className={`${btnBase} text-xs py-1 px-2 ${btnInactive}`}>가로2분할</button>
+            <button type="button" onClick={() => onApplyCollage('splitV')} className={`${btnBase} text-xs py-1 px-2 ${btnInactive}`}>세로2분할</button>
+            <button type="button" onClick={() => onApplyCollage('grid2x2')} className={`${btnBase} text-xs py-1 px-2 ${btnInactive}`}>격자(4장)</button>
+          </div>
+        )}
 
         <div className="w-px h-8 bg-gray-200" />
 
@@ -328,59 +357,64 @@ export default function ImageEditorToolbar({
         </div>
       </div>
 
-      <div className={`flex flex-wrap items-center gap-3 pt-1 border-t border-gray-100 ${tool === 'blurBrush' || tool === 'mosaicBrush' ? 'bg-white/80 -mx-1 px-1 py-1 rounded-xl' : ''}`}>
-        <div className="flex items-center gap-1.5">
-          <span className={controlLabel}>마스킹 굵기</span>
-          <input
-            type="range"
-            min={6}
-            max={120}
-            value={privacyBrushSize}
-            onChange={(e) => setPrivacyBrushSize(Number(e.target.value))}
-            className="w-32 accent-primary-500"
-          />
-          <span className="text-xs text-gray-400 w-10">{privacyBrushSize}px</span>
-        </div>
+      {/* --- 개인정보/마스킹 공통 사이즈 조절 패널 --- */}
+      <div className={`flex flex-wrap items-center gap-3 pt-1 border-t border-gray-100 ${tool === 'blurBrush' || tool === 'mosaicBrush' || tool === 'grayscaleBrush' || tool === 'aiEraseBrush' ? 'bg-white/80 -mx-1 px-1 py-1 rounded-xl' : ''}`}>
+        {(tool === 'blurBrush' || tool === 'mosaicBrush' || tool === 'grayscaleBrush' || tool === 'aiEraseBrush') && (
+          <>
+            <div className="flex items-center gap-1.5">
+              <span className={controlLabel}>마스킹 굵기</span>
+              <input
+                type="range"
+                min={6}
+                max={120}
+                value={privacyBrushSize}
+                onChange={(e) => setPrivacyBrushSize(Number(e.target.value))}
+                className="w-32 accent-primary-500"
+              />
+              <span className="text-xs text-gray-400 w-10">{privacyBrushSize}px</span>
+            </div>
 
-        <div className="flex items-center gap-1.5">
-          {privacyPreset.map((size) => (
+            <div className="flex items-center gap-1.5">
+              {privacyPreset.map((size) => (
+                <button
+                  key={size}
+                  type="button"
+                  onClick={() => setPrivacyBrushSize(size)}
+                  className={`${btnBase} text-[11px] px-2 py-1 ${privacyBrushSize === size ? 'bg-primary-500 text-white border-primary-500' : btnInactive}`}
+                >
+                  {size}px
+                </button>
+              ))}
+            </div>
+
             <button
-              key={size}
               type="button"
-              onClick={() => setPrivacyBrushSize(size)}
-              className={`${btnBase} text-[11px] px-2 py-1 ${privacyBrushSize === size ? 'bg-primary-500 text-white border-primary-500' : btnInactive}`}
+              onClick={onClearPrivacy}
+              disabled={!hasAnyPrivacyBrush}
+              className={`${btnBase} text-xs ${hasAnyPrivacyBrush ? btnInactive : 'bg-gray-100 text-gray-400 border-gray-100 cursor-not-allowed'}`}
             >
-              {size}px
+              마스킹 지우기
             </button>
-          ))}
-        </div>
 
-        <button
-          type="button"
-          onClick={onClearPrivacy}
-          disabled={!hasAnyPrivacyBrush}
-          className={`${btnBase} text-xs ${hasAnyPrivacyBrush ? btnInactive : 'bg-gray-100 text-gray-400 border-gray-100 cursor-not-allowed'}`}
-        >
-          마스킹 지우기
-        </button>
+            <button
+              type="button"
+              onClick={onUndoPrivacy}
+              disabled={!canUndoPrivacy}
+              className={`${btnBase} text-xs ${canUndoPrivacy ? btnInactive : 'bg-gray-100 text-gray-400 border-gray-100 cursor-not-allowed'}`}
+            >
+              마스킹 되돌리기
+            </button>
 
-        <button
-          type="button"
-          onClick={onUndoPrivacy}
-          disabled={!canUndoPrivacy}
-          className={`${btnBase} text-xs ${canUndoPrivacy ? btnInactive : 'bg-gray-100 text-gray-400 border-gray-100 cursor-not-allowed'}`}
-        >
-          마스킹 되돌리기
-        </button>
-
-        <button
-          type="button"
-          onClick={onRedoPrivacy}
-          disabled={!canRedoPrivacy}
-          className={`${btnBase} text-xs ${canRedoPrivacy ? btnInactive : 'bg-gray-100 text-gray-400 border-gray-100 cursor-not-allowed'}`}
-        >
-          마스킹 재실행
-        </button>
+            <button
+              type="button"
+              onClick={onRedoPrivacy}
+              disabled={!canRedoPrivacy}
+              className={`${btnBase} text-xs ${canRedoPrivacy ? btnInactive : 'bg-gray-100 text-gray-400 border-gray-100 cursor-not-allowed'}`}
+            >
+              마스킹 재실행
+            </button>
+          </>
+        )}
       </div>
 
       <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-gray-100">
