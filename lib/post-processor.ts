@@ -631,14 +631,12 @@ export function enforceRegionFrequency(content: string, region: string): string 
 
   // 2. 검사 및 보정
 
-  // [서론] (제목 제외 서론 본문에 1회 있는지 확인)
-  // 제목은 첫 줄이라고 가정. 서론 본문에서 체크.
-  const introLines = introPart.split('\n')
-  const introBody = introLines.slice(1).join('\n')
+  // [서론] 제목+서론 전체, 또는 첫 번째 ## 섹션 본문에 지역명이 있으면 스킵
+  // 블로그 구조상 인사말이 첫 ## 섹션 안에 오는 경우가 많음
+  const firstBodySection = sections.length > 2 ? sections[2] : ''
+  const introHasRegion = introPart.includes(region) || firstBodySection.includes(region)
 
-  if (!introBody.includes(region)) {
-    // 서론 마지막에 자연스럽게 추가 (이미 있으면 패스)
-    // 인사가 보통 맨 앞이므로, 맨 뒤에 붙이는게 안전
+  if (!introHasRegion) {
     introPart = introPart.trim() + `\n\n${region}에서 알려드렸습니다.`
   }
 
@@ -697,7 +695,45 @@ export function enforceRegionFrequency(content: string, region: string): string 
   // 재조립시 introPart 업데이트
   sections[0] = introPart
 
-  return sections.join('')
+  // 3. Cap 로직: 총 region 수가 8회 초과 시 본론 뒤쪽부터 제거
+  let assembled = sections.join('')
+  const totalRegionCount = (assembled.match(new RegExp(escapeRegex(region), 'g')) || []).length
+
+  if (totalRegionCount > 8) {
+    // 뒤에서부터 본론 영역의 region 멘션을 포함한 문장을 제거
+    const regionRegex = new RegExp(escapeRegex(region), 'g')
+    const allPositions: number[] = []
+    let m: RegExpExecArray | null
+    while ((m = regionRegex.exec(assembled)) !== null) {
+      allPositions.push(m.index)
+    }
+
+    // 앞 3개(제목+서론+본론초반)와 뒤 1개(결론)는 보호, 나머지 뒤에서부터 제거
+    const excess = totalRegionCount - 7
+    // 제거 대상: 보호 3개 이후 ~ 결론 1개 이전
+    const removable = allPositions.slice(3, -1)
+    const toRemovePositions = removable.slice(-excess) // 뒤쪽 excess개
+
+    // 해당 위치의 region을 포함한 문장(줄) 전체 제거 (뒤에서부터)
+    for (let i = toRemovePositions.length - 1; i >= 0; i--) {
+      const pos = toRemovePositions[i]
+      const before = assembled.slice(0, pos)
+      const lineStart = before.lastIndexOf('\n') + 1
+      const afterPos = assembled.slice(pos)
+      const lineEndRel = afterPos.indexOf('\n')
+      const lineEnd = lineEndRel === -1 ? assembled.length : pos + lineEndRel
+
+      // 해당 줄이 헤더(##)가 아닌 경우에만 제거
+      const line = assembled.slice(lineStart, lineEnd)
+      if (/^##\s/.test(line.trim())) continue
+      assembled = assembled.slice(0, lineStart) + assembled.slice(lineEnd + 1)
+    }
+
+    // 빈 줄 정리
+    assembled = assembled.replace(/\n{3,}/g, '\n\n')
+  }
+
+  return assembled
 }
 
 // ============================================================
@@ -747,7 +783,7 @@ function enforceQnaPosition(content: string, writingMode?: string): string {
   const QNA_START = /^\s*(?:\*{0,2}Q[.:\s])/i
   const QNA_ANSWER = /^\s*(?:\*{0,2}A[.:\s])/i
   // FAQ 헤더 패턴
-  const FAQ_HEADER = /^\s*(?:#{1,3}\s*)?(?:FAQ|Q\s*&\s*A|자주\s*묻는\s*질문|궁금하신)/i
+  const FAQ_HEADER = /^\s*(?:#{1,3}\s*)?(?:\*{1,2})?(?:FAQ|Q\s*&\s*A|자주\s*묻는\s*질문|궁금하신)(?:\*{1,2})?/i
 
   // 임상 모드: 모든 Q&A 제거
   if (writingMode === 'expert') {
