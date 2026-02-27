@@ -262,7 +262,7 @@ export default function DashboardPage() {
 
       <div className="mb-4 text-center">
         <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-gray-100 text-gray-500 text-xs font-mono rounded-full">
-          v3.10.0 AI 이미지 생성
+          v{process.env.NEXT_PUBLIC_APP_VERSION || '3.11.2'} AI 이미지 생성
         </span>
       </div>
 
