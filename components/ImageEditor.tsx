@@ -1092,7 +1092,7 @@ export default function ImageEditor({ initialBgDataUrl }: ImageEditorProps) {
     setContrast(100)
     setMosaicSize(0)
     setSelectedId(null)
-  }, [previewCrop, displayImage, canvasSize.h, canvasSize.w])
+  }, [previewCrop, displayImage, canvasSize.h, canvasSize.w, bgRotation, bgFlipX, bgFlipY, clearPrivacyHistory])
 
   const clearCrop = useCallback(() => {
     setCropRect(null)

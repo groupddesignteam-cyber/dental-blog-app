@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { GenerateFormData, UploadedImage, KeywordAnalysisState, WritingMode, ResearchResult } from '@/types'
+import { GenerateFormData, UploadedImage, KeywordAnalysisState, WritingMode, ResearchResult, ClinicalProcedure, SectionTemplate } from '@/types'
 import { getDefaultTreatments, detectSpecialty, SPECIALTY_LABELS } from '@/data/specialties'
 
 interface Props {
@@ -204,6 +204,16 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
     writingMode: 'expert' as WritingMode, // 임상 포스팅 기본
     sourceClinic: '', // 초기화
   })
+
+  // 복합 케이스 구조화 CC (임상 모드)
+  const [isStructuredCC, setIsStructuredCC] = useState(false)
+  const [procedures, setProcedures] = useState<ClinicalProcedure[]>([
+    { name: '', sequence: 1, isPrimary: true, details: '', toothNumber: '', emphasis: '' },
+  ])
+
+  // 소제목 커스텀 (선택)
+  const [useCustomSections, setUseCustomSections] = useState(false)
+  const [customSections, setCustomSections] = useState<SectionTemplate[]>([])
 
   // 리서치 CC (정보성 모드)
   const [researchQuery, setResearchQuery] = useState('')
@@ -448,6 +458,8 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
       images: images.length > 0 ? images : undefined,
       selectedKeywords: keywordState.selectedKeywords,
       usePersona: keywordState.hasPersona,
+      procedures: isStructuredCC && procedures.some(p => p.name) ? procedures.filter(p => p.name) : undefined,
+      customSections: useCustomSections && customSections.length > 0 ? customSections.filter(s => s.title) : undefined,
     })
   }
 
@@ -463,6 +475,8 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
       ...formData,
       topic: finalTopic,
       images: images.length > 0 ? images : undefined,
+      procedures: isStructuredCC && procedures.some(p => p.name) ? procedures.filter(p => p.name) : undefined,
+      customSections: useCustomSections && customSections.length > 0 ? customSections.filter(s => s.title) : undefined,
     })
   }
 
@@ -906,22 +920,135 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
               </div>
             )}
 
-            <textarea
-              name="patientInfo"
-              value={formData.patientInfo}
-              onChange={handleChange}
-              required
-              rows={formData.writingMode === 'informative' && formData.patientInfo.length > 200 ? 8 : 4}
-              placeholder={formData.writingMode === 'informative'
-                ? "위 🔍 리서치를 실행하면 자동으로 채워집니다.\n또는 직접 입력도 가능합니다."
-                : "예:\n#36 치근단 병소 관찰\n저작 시 통증 호소\n골이식 후 임플란트 식립 예정"}
-              className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 resize-y"
-            />
-            <p className="mt-1 text-xs text-gray-500">
-              {formData.writingMode === 'informative'
-                ? '리서치 결과를 편집하거나 직접 작성하세요'
-                : 'CC(주소), 임상 소견, 치료 계획 등을 상세히 입력하세요'}
-            </p>
+            {/* 임상 모드: 단순/복합 케이스 토글 */}
+            {formData.writingMode === 'expert' && (
+              <div className="flex items-center gap-2 mb-2">
+                <button
+                  type="button"
+                  onClick={() => setIsStructuredCC(false)}
+                  className={`px-3 py-1 text-xs rounded-lg border transition-colors ${!isStructuredCC ? 'bg-primary-500 text-white border-primary-500' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}
+                >
+                  단순 입력
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsStructuredCC(true)}
+                  className={`px-3 py-1 text-xs rounded-lg border transition-colors ${isStructuredCC ? 'bg-primary-500 text-white border-primary-500' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}
+                >
+                  복합 케이스
+                </button>
+                {isStructuredCC && (
+                  <span className="text-xs text-amber-600">다중 시술 순서 + 주시술 지정</span>
+                )}
+              </div>
+            )}
+
+            {/* 구조화 CC: 복합 케이스 시술 카드 */}
+            {formData.writingMode === 'expert' && isStructuredCC ? (
+              <div className="space-y-3">
+                {procedures.map((proc, idx) => (
+                  <div key={idx} className="border border-gray-200 rounded-xl p-3 bg-gray-50 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-gray-500 w-5">{idx + 1}</span>
+                      <input
+                        type="text"
+                        value={proc.name}
+                        onChange={(e) => {
+                          const next = [...procedures]
+                          next[idx] = { ...next[idx], name: e.target.value }
+                          setProcedures(next)
+                        }}
+                        placeholder="시술명 (예: 상악동거상술)"
+                        className="flex-1 px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-primary-500"
+                      />
+                      <input
+                        type="text"
+                        value={proc.toothNumber || ''}
+                        onChange={(e) => {
+                          const next = [...procedures]
+                          next[idx] = { ...next[idx], toothNumber: e.target.value }
+                          setProcedures(next)
+                        }}
+                        placeholder="#번호"
+                        className="w-16 px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-primary-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const next = procedures.map((p, i) => ({ ...p, isPrimary: i === idx }))
+                          setProcedures(next)
+                        }}
+                        className={`px-2 py-1 text-xs rounded-lg border ${proc.isPrimary ? 'bg-blue-500 text-white border-blue-500' : 'bg-white text-gray-500 border-gray-300 hover:bg-blue-50'}`}
+                      >
+                        {proc.isPrimary ? '주시술' : '보조'}
+                      </button>
+                      {procedures.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => setProcedures(procedures.filter((_, i) => i !== idx))}
+                          className="text-red-400 hover:text-red-600 text-sm"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                    <textarea
+                      value={proc.details}
+                      onChange={(e) => {
+                        const next = [...procedures]
+                        next[idx] = { ...next[idx], details: e.target.value }
+                        setProcedures(next)
+                      }}
+                      placeholder="임상 상세 (소견, 치료 내용...)"
+                      rows={2}
+                      className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-primary-500 resize-y"
+                    />
+                    <input
+                      type="text"
+                      value={proc.emphasis || ''}
+                      onChange={(e) => {
+                        const next = [...procedures]
+                        next[idx] = { ...next[idx], emphasis: e.target.value }
+                        setProcedures(next)
+                      }}
+                      placeholder="강조 포인트 (선택)"
+                      className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-primary-500"
+                    />
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setProcedures([...procedures, {
+                    name: '', sequence: procedures.length + 1, isPrimary: false, details: '', toothNumber: '', emphasis: '',
+                  }])}
+                  className="w-full py-1.5 text-xs text-gray-500 border border-dashed border-gray-300 rounded-lg hover:bg-gray-50"
+                >
+                  + 시술 단계 추가
+                </button>
+                <p className="text-xs text-gray-500">
+                  주시술이 본론의 40% 이상을 차지하며, 보조 시술은 맥락으로 연결됩니다.
+                </p>
+              </div>
+            ) : (
+              <>
+                <textarea
+                  name="patientInfo"
+                  value={formData.patientInfo}
+                  onChange={handleChange}
+                  required={!isStructuredCC}
+                  rows={formData.writingMode === 'informative' && formData.patientInfo.length > 200 ? 8 : 4}
+                  placeholder={formData.writingMode === 'informative'
+                    ? "위 🔍 리서치를 실행하면 자동으로 채워집니다.\n또는 직접 입력도 가능합니다."
+                    : "예:\n#36 치근단 병소 관찰\n저작 시 통증 호소\n골이식 후 임플란트 식립 예정"}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 resize-y"
+                />
+                <p className="mt-1 text-xs text-gray-500">
+                  {formData.writingMode === 'informative'
+                    ? '리서치 결과를 편집하거나 직접 작성하세요'
+                    : 'CC(주소), 임상 소견, 치료 계획 등을 상세히 입력하세요'}
+                </p>
+              </>
+            )}
           </div>
 
           <div>
@@ -938,6 +1065,90 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
               className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500"
             />
             <p className="mt-1 text-xs text-gray-500">구체적인 시술 내용을 입력하세요</p>
+          </div>
+
+          {/* 소제목 커스텀 (선택) */}
+          <div className="border border-gray-200 rounded-xl overflow-hidden">
+            <button
+              type="button"
+              onClick={() => {
+                setUseCustomSections(!useCustomSections)
+                if (!useCustomSections && customSections.length === 0) {
+                  setCustomSections(
+                    formData.writingMode === 'expert'
+                      ? [{ title: '소견 및 진단' }, { title: '치료 과정' }, { title: '주의사항 및 예후' }]
+                      : [{ title: '왜 이런 일이 생길까?' }, { title: '어떻게 치료하나요?' }, { title: '치료 후 관리' }]
+                  )
+                }
+              }}
+              className="w-full flex items-center justify-between px-3 py-2 bg-gray-50 hover:bg-gray-100 transition-colors text-sm"
+            >
+              <span className="font-medium text-gray-700">소제목 커스텀 (선택)</span>
+              <span className="text-gray-400 text-xs">{useCustomSections ? '▲ 접기' : '▼ 펼치기'}</span>
+            </button>
+            {useCustomSections && (
+              <div className="p-3 space-y-2">
+                <div className="flex gap-2 mb-2">
+                  {[
+                    { label: '기본', sections: formData.writingMode === 'expert' ? [{ title: '소견 및 진단' }, { title: '치료 과정' }, { title: '주의사항 및 예후' }] : [{ title: '왜 이런 일이 생길까?' }, { title: '어떻게 치료하나요?' }, { title: '치료 후 관리' }] },
+                    { label: '원인-치료-관리', sections: [{ title: '원인과 증상' }, { title: '치료 방법' }, { title: '치료 후 관리법' }] },
+                    { label: '증상-진단-치료-예후', sections: [{ title: '증상 확인' }, { title: '정밀 진단' }, { title: '치료 과정' }, { title: '예후 및 관리' }] },
+                  ].map((preset) => (
+                    <button
+                      key={preset.label}
+                      type="button"
+                      onClick={() => setCustomSections(preset.sections)}
+                      className="px-2 py-1 text-xs border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-600"
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+                {customSections.map((sec, idx) => (
+                  <div key={idx} className="flex items-center gap-2">
+                    <span className="text-xs text-gray-400 w-4">{idx + 1}</span>
+                    <input
+                      type="text"
+                      value={sec.title}
+                      onChange={(e) => {
+                        const next = [...customSections]
+                        next[idx] = { ...next[idx], title: e.target.value }
+                        setCustomSections(next)
+                      }}
+                      placeholder="소제목 입력"
+                      className="flex-1 px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-primary-500"
+                    />
+                    <input
+                      type="text"
+                      value={sec.description || ''}
+                      onChange={(e) => {
+                        const next = [...customSections]
+                        next[idx] = { ...next[idx], description: e.target.value }
+                        setCustomSections(next)
+                      }}
+                      placeholder="내용 힌트 (선택)"
+                      className="w-40 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-primary-500"
+                    />
+                    {customSections.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => setCustomSections(customSections.filter((_, i) => i !== idx))}
+                        className="text-red-400 hover:text-red-600 text-sm"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setCustomSections([...customSections, { title: '' }])}
+                  className="w-full py-1 text-xs text-gray-500 border border-dashed border-gray-300 rounded-lg hover:bg-gray-50"
+                >
+                  + 섹션 추가
+                </button>
+              </div>
+            )}
           </div>
 
           <div>

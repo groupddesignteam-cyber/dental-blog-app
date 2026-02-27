@@ -43,6 +43,22 @@ export interface BatchDiversityHints {
   closingCtaIndex: number       // CLOSING_CTA_PHRASES 인덱스
 }
 
+// 복합 임상 케이스 시술 단계
+export interface ClinicalProcedure {
+  name: string          // "상악동 거상술"
+  sequence: number      // 1, 2, 3 (시술 순서)
+  isPrimary: boolean    // 주 시술 여부
+  details: string       // 상세 임상 내용
+  toothNumber?: string  // "#26"
+  emphasis?: string     // 강조 포인트
+}
+
+// 소제목 커스텀 템플릿
+export interface SectionTemplate {
+  title: string        // H2 소제목 텍스트
+  description?: string // 이 섹션에서 다룰 내용 (선택)
+}
+
 export interface GenerateFormData {
   clinicName: string
   region: string
@@ -68,6 +84,10 @@ export interface GenerateFormData {
   sourceClinic?: string
   // 논문 인용 모드 (PubMed 검색)
   citePapers?: boolean
+  // 복합 임상 케이스 시술 단계 (구조화 CC)
+  procedures?: ClinicalProcedure[]
+  // 소제목 커스텀 (선택)
+  customSections?: SectionTemplate[]
 }
 
 // 키워드 분석 결과 타입 (클라이언트용)

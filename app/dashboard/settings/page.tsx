@@ -285,7 +285,7 @@ export default function SettingsPage() {
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">시스템 정보</h2>
         <div className="space-y-2 text-sm text-gray-600">
-          <p>버전: 1.0.0</p>
+          <p>버전: {process.env.NEXT_PUBLIC_APP_VERSION || 'dev'}</p>
           <p>AI 모델: Claude API</p>
           <p>저장소: Google Sheets</p>
         </div>

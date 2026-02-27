@@ -164,7 +164,7 @@ function checkKeywordFrequency(
     ? mainKeyword.replace(region, '').trim() || ''
     : ''
 
-  // 형태소A (region) 카운트: 목표 7, 허용 6~8
+  // 형태소A (region) 카운트: 목표 5~8, 허용 4~9
   if (region) {
     const regionTotal = (cleanContent.match(new RegExp(escapeRegex(region), 'g')) || []).length
     // 치과명 내부에 포함된 region 횟수 차감 (예: "부평좋은치과" 안의 "부평")
@@ -174,16 +174,16 @@ function checkKeywordFrequency(
     }
     const regionCount = regionTotal - regionClinicOverlap
 
-    if (regionCount > 8) {
-      issues.push(`"${region}" ${regionCount}회 (형태소A 목표 7, 최대 8 초과)${regionClinicOverlap ? ` [치과명 내 ${regionClinicOverlap}회 제외]` : ''}`)
-    } else if (regionCount < 6) {
-      issues.push(`"${region}" ${regionCount}회 (형태소A 목표 7, 최소 6 미달)${regionClinicOverlap ? ` [치과명 내 ${regionClinicOverlap}회 제외]` : ''}`)
+    if (regionCount > 9) {
+      issues.push(`"${region}" ${regionCount}회 (형태소A 허용 4~9, 초과)${regionClinicOverlap ? ` [치과명 내 ${regionClinicOverlap}회 제외]` : ''}`)
+    } else if (regionCount < 4) {
+      issues.push(`"${region}" ${regionCount}회 (형태소A 허용 4~9, 미달)${regionClinicOverlap ? ` [치과명 내 ${regionClinicOverlap}회 제외]` : ''}`)
     } else {
       info.push(`"${region}" ${regionCount}회 (형태소A)${regionClinicOverlap ? ` [치과명 내 ${regionClinicOverlap}회 제외]` : ''}`)
     }
   }
 
-  // 형태소B 카운트: 목표 7, 허용 5~8
+  // 형태소B 카운트: 목표 5~8, 허용 4~9
   if (morphemeB) {
     const morphBTotal = (cleanContent.match(new RegExp(escapeRegex(morphemeB), 'g')) || []).length
     // 치과명 내부에 포함된 morphemeB 횟수 차감 (예: "부평치과" 안의 "치과")
@@ -193,10 +193,10 @@ function checkKeywordFrequency(
     }
     const morphBCount = morphBTotal - clinicOverlap
 
-    if (morphBCount > 8) {
-      issues.push(`"${morphemeB}" ${morphBCount}회 (형태소B 목표 7, 최대 8 초과)${clinicOverlap ? ` [치과명 내 ${clinicOverlap}회 제외]` : ''}`)
-    } else if (morphBCount < 5) {
-      issues.push(`"${morphemeB}" ${morphBCount}회 (형태소B 목표 7, 최소 5 미달)${clinicOverlap ? ` [치과명 내 ${clinicOverlap}회 제외]` : ''}`)
+    if (morphBCount > 9) {
+      issues.push(`"${morphemeB}" ${morphBCount}회 (형태소B 허용 4~9, 초과)${clinicOverlap ? ` [치과명 내 ${clinicOverlap}회 제외]` : ''}`)
+    } else if (morphBCount < 4) {
+      issues.push(`"${morphemeB}" ${morphBCount}회 (형태소B 허용 4~9, 미달)${clinicOverlap ? ` [치과명 내 ${clinicOverlap}회 제외]` : ''}`)
     } else {
       info.push(`"${morphemeB}" ${morphBCount}회 (형태소B)${clinicOverlap ? ` [치과명 내 ${clinicOverlap}회 제외]` : ''}`)
     }

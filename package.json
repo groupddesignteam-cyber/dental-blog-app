@@ -1,6 +1,6 @@
 {
   "name": "dental-blog-app",
-  "version": "3.11.3",
+  "version": "3.12.0",
   "private": true,
   "scripts": {
     "dev": "next dev",

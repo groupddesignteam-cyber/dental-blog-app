@@ -427,11 +427,11 @@ export function enforceMorphemeLimit(
   // morphemeB 추출: mainKeyword에서 region 제거
   const morphemeB = mainKeyword.replace(region, '').trim() || '치과'
 
-  // 형태소B 빈도 제한 (7회 초과 시 동의어 교체)
+  // 형태소B 빈도 제한 (9회 초과 시 동의어 교체 — 5~8회 범위 허용)
   if (morphemeB) {
     const synonymsB = SYNONYM_DICTIONARY[morphemeB]
     if (synonymsB && synonymsB.length > 0) {
-      result = reduceWordCount(result, morphemeB, 7, synonymsB)
+      result = reduceWordCount(result, morphemeB, 9, synonymsB)
     }
   }
 
@@ -669,14 +669,14 @@ export function enforceRegionFrequency(content: string, region: string, writingM
     introPart = introPart.trim() + `\n\n${region}에서 알려드렸습니다.`
   }
 
-  // [본론] (총 4회 맞추기)
+  // [본론] (총 2회 미만일 때만 브릿지 삽입 — 자연스러운 배치 우선)
   let currentBodyCount = 0
   for (const idx of bodyIndices) {
     currentBodyCount += (sections[idx].match(new RegExp(escapeRegex(region), 'g')) || []).length
   }
 
-  if (currentBodyCount < 4) {
-    let deficiency = 4 - currentBodyCount
+  if (currentBodyCount < 2) {
+    let deficiency = 2 - currentBodyCount
     const bridges = getBridgeSentences(region, writingMode)
     let bridgeIdx = 0
 

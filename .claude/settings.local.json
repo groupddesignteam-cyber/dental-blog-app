@@ -35,7 +35,23 @@
       "Bash(git push:*)",
       "Bash(npx next build:*)",
       "Bash(npx vercel:*)",
-      "Bash(node scripts/test-postprocess.mjs:*)"
+      "Bash(node scripts/test-postprocess.mjs:*)",
+      "Bash(ls:*)",
+      "Bash(node scripts/test-real-case.mjs:*)",
+      "WebFetch(domain:www.ncbi.nlm.nih.gov)",
+      "WebFetch(domain:www.nlm.nih.gov)",
+      "Bash(node:*)",
+      "Bash(taskkill:*)",
+      "WebFetch(domain:docs.perplexity.ai)",
+      "Bash(echo:*)",
+      "Bash(npx tsx:*)",
+      "Bash(npx next dev --port 3000)",
+      "Bash(npm install:*)",
+      "Bash(find:*)",
+      "Bash(wc:*)",
+      "Bash(git checkout -- lib/post-processor.ts lib/post-validator.ts)",
+      "Bash(npx tsc --noEmit --pretty)",
+      "Bash(npx tsc --noEmit)"
     ]
   }
 }

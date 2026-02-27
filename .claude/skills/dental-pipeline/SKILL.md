@@ -4,14 +4,14 @@ description: "기술 파이프라인 워크플로우. 후처리/검증/RAG 디�
 disable-model-invocation: true
 ---
 
-# 글 생성 파이프라인 (v3.11.1)
+# 글 생성 파이프라인 (v3.12.0)
 
 ## 전체 흐름
 
 ```
 [UI 입력] → [API /api/generate] → [병렬 I/O: RAG + 키워드 + 페르소나]
 → [프롬프트 조립: system + user] → [LLM 스트리밍]
-→ [후처리 11단계] → [44byte 라인포맷] → [검증 14항목] → [SSE 응답]
+→ [후처리 14단계] → [44byte 라인포맷] → [검증 14항목] → [SSE 응답]
 ```
 
 ---
@@ -22,10 +22,10 @@ disable-model-invocation: true
 |------|------|----------|
 | `app/api/generate/route.ts` | 메인 파이프라인 (~1,639줄) | POST handler, buildSystemPrompt, buildUserPrompt |
 | `lib/sheets-rag.ts` | Google Sheets RAG + 페르소나 | findClinicTopicPosts, extractClinicPersona, generateRAGContext |
-| `lib/post-processor.ts` | LLM 출력 후처리 (11단계) | postProcess() |
+| `lib/post-processor.ts` | LLM 출력 후처리 (14단계) | postProcess() |
 | `lib/post-validator.ts` | 검증 14항목 | validatePost() |
 | `lib/line-formatter.ts` | 네이버 44byte EUC-KR 포맷 | formatLineBreaks() |
-| `data/synonyms.ts` | 동의어 사전 72개 | SYNONYM_DICTIONARY, getSynonymInstruction() |
+| `data/synonyms.ts` | 동의어 사전 49개 | SYNONYM_DICTIONARY, getSynonymInstruction() |
 | `data/knowledge.ts` | 용어치환, 의학정보 | TERM_REPLACEMENTS, formatMedicalInfoForPrompt() |
 | `data/medical-law.ts` | 의료법 패턴 | checkForbiddenPatterns(), REQUIRED_DISCLAIMERS |
 | `data/seo.ts` | SEO 규칙, 해시태그 | generateHashtags() |
@@ -41,19 +41,85 @@ disable-model-invocation: true
 
 | Step | 함수 | 임계값/규칙 |
 |------|------|------------|
-| 1 | `sanitizeForbiddenWords` | 16개 활용형 + 14개 1:1 치환 (걱정->염려, 해결->개선) |
+| 1 | `sanitizeForbiddenWords` | 16개 활용형 + 14개 1:1 치환 (걱정->염려, 고민->염려 + 조사 보정) |
 | 1.5 | `sanitizeMedicalExpressions` | 26개 의료법 패턴 (무통->저통증, 환자분->분들) |
+| 1.6 | `💡 핵심 치과명 제거` | 💡 핵심: 문장에서 치과명/지역+치과+효과 연결 제거 (의료법) |
 | 1.7 | `enforceQnaPosition` | 임상=Q&A 전체삭제, 정보성=결론1건만 |
 | 1.8 | `removeBoilerplatePhrases` | 6패턴, 2회+ 등장 시 2번째부터 줄 삭제 |
 | 1.9 | `limitMetaphors` | 임상=0회, 정보성=2회 초과분 삭제 |
 | 2 | `sanitizeForbiddenEndings` | ~해요->합니다, ~거든요->기 때문이죠 등 9패턴 |
 | 2.5 | `breakConsecutiveImnida` | [정보성] 3연속 ~입니다 -> ~이죠/~인데요 교체 |
-| 3 | `enforceMorphemeLimit` | 형태소B **>7회** -> 동의어교체, 서브키워드 **>5회** -> 교체 |
-| 4 | `rotateSynonyms` | 일반단어 **>6회** -> 동의어회전 (72개 사전, 보호구간 제외) |
+| 3 | `enforceMorphemeLimit` | 형태소B **>9회** -> 동의어교체, 서브키워드 **>5회** -> 교체 |
+| 4 | `rotateSynonyms` | 일반단어 **>6회** -> 동의어회전 (49개 사전, 복합어 보호+조사 보정) |
 | 4.5 | `limitEmphasisAdverbs` | 가장/특히/무엇보다 각 **>2회** -> 대체어 |
-| 5 | `enforceRegionFrequency` | 지역명 총 7회 분포 (제목1+서론1+본론4+결론1), 헤더<2 시 fallback |
+| 5 | `enforceRegionFrequency` | 지역명 5~8회 범위 + 상한 8회 cap + 본문 <2회 시만 브릿지 삽입 |
 | 6 | `ensureSentenceLineBreaks` | 종결어미+공백+새문장 -> 줄바꿈 |
 | 7 | `ensureHeadingLineBreaks` | ## 앞뒤 빈 줄 보장 |
+
+---
+
+## v3.11.2~3.11.3 변경사항
+
+### 동의어 사전 정비 (`data/synonyms.ts`)
+
+**삭제된 엔트리** (임상 표준 용어 — 동의어 회전 시 의미 파괴):
+- `진행` — "감염이 진행된"→"감염이 시행된" 의미 파괴
+- `부위` — "43번 부분는" 등 해부학 표준 용어 교체 방지
+- `상태` — "골유착 수행 현황" 행정 문서 톤 방지
+
+**수정된 엔트리** (부적절 동의어 제거):
+- `치아`: 영구치 제거 → `['자연치']`만 유지
+- `경우`: 케이스 제거 → `['상황', '사례']`만 유지
+- `조직`: 세포 제거 → `['연조직', '조직층']`만 유지 (세포≠조직)
+- `보철`: 지르코니아 제거 → `['수복물', '보철 수복']`만 유지
+- `발치`: 발거 제거 → `['치아 제거', '치아 적출']`만 유지
+- `식립`: 설치 제거 → `['매식', '배치']`만 유지 (설치는 비의학적)
+
+### rotateSynonyms 복합어 보호 (`lib/post-processor.ts`)
+
+**COMPOUND_SUFFIXES**: 매칭된 단어 뒤에 `물/술/치/재/법/학/과/막` 이 오면 복합어 내부로 판단 → 교체 스킵
+```typescript
+const COMPOUND_SUFFIXES = /^[물술치재법학과막]/
+```
+- "보철**물**" 내부의 "보철" 매칭 → 스킵 → "수복물물" 방지
+
+**PROTECTED_COMPOUNDS 확장**:
+```
+보철물, 수복물, 골이식재, 상악동막, 발치와
+```
+
+### rotateSynonyms 조사 보정 (`lib/post-processor.ts`)
+
+동의어 교체 시 한국어 조사 자동 조정:
+```
+식립이 → 배치가 (받침 유→무: 이→가)
+식립을 → 배치를 (받침 유→무: 을→를)
+```
+- `adjustParticle(synonym, oldParticle)` 함수로 받침 유무에 따라 은/는, 이/가, 을/를, 과/와 자동 전환
+
+### enforceRegionFrequency 개선 (`lib/post-processor.ts`)
+
+1. **writingMode 파라미터** 추가: 임상/정보성 브릿지 문장 분기
+2. **임상 모드 브릿지 문장**: 임상 톤에 맞는 6개 문장 추가
+   - "~에서도 이와 유사한 증례가 보고되고 있습니다."
+   - "~에서도 유사한 임상 양상이 관찰됩니다." 등
+3. **상한 cap 로직**: 지역명 >8회 시 본문 후방에서 초과분 제거
+4. **서론 체크 강화**: sections[0] + sections[2] (첫 ## 본문)에서 기존 지역명 확인
+
+### Step 1.6: 💡 핵심 치과명 제거
+
+💡 핵심: 문장에서 `${치과명}에서`, `${지역명} 치과에서 진행하는` 등 패턴 제거
+→ 의료법 위반 방지 (치과명+치료효과 연결 금지)
+
+### CONTEXT_REPLACEMENTS 조사 보정
+
+- `고민이` → `염려가` (기존 `고충이`는 비문)
+- `고민을` → `염려를` (기존 `고충을`은 비문)
+- `고민` → `염려` (기존 `숙고`는 톤 부적합)
+
+### FAQ_HEADER 패턴 개선
+
+마크다운 볼드 `**FAQ**` 패턴도 매칭하도록 업데이트
 
 ---
 
@@ -64,7 +130,7 @@ disable-model-invocation: true
 | 1 | 글자수 | >=2,000(에러), >=2,500(경고) | 10/5 |
 | 2 | 치과명 위치 | 서론15%+결론85%만 | 20/10 |
 | 3 | 금지 어미 | ~해요/거든요 등 0건 | 15/8 |
-| 4 | 키워드 빈도 | 형태소A/B 각 6~8회, 치과명<=3 | 10/6 |
+| 4 | 키워드 빈도 | 형태소A/B 각 4~9회, 치과명<=3 | 10/6 |
 | 5 | 의료법 준수 | 효과보장/환자정보 0건 | **25/12** |
 | 6 | 금칙어 | 19단어 독립출현 0건 | 8/5 |
 | 7 | 부작용 고지 | ※부작용 고지문 포함 | 5/4 |
@@ -122,6 +188,12 @@ UI에서 RAG 배지 표시 (초록=적용, 회색=미적용)
 2. 해당 패턴 배열에서 오탐 regex 수정 또는 화이트리스트 추가
 3. 예: "에 해당합니다" 비유 오탐 → METAPHOR_PATTERNS에서 제거 (v3.11.0)
 
+### 동의어 회전 오류 (v3.11.3 이후)
+1. **복합어 파괴**: "보철물"→"수복물물" — COMPOUND_SUFFIXES 누락 시 발생. 접미사 추가.
+2. **임상 용어 의미 파괴**: "감염이 진행된"→"감염이 시행된" — 해당 단어를 synonyms.ts에서 삭제.
+3. **조사 불일치**: "식립이"→"배치이" — adjustParticle 미적용. PARTICLE_PATTERN 확인.
+4. **복합어 내부 매칭**: PROTECTED_COMPOUNDS에 해당 복합어 추가, 또는 COMPOUND_SUFFIXES에 접미사 추가.
+
 ### 검증-후처리 임계값 불일치
 후처리와 검증의 threshold가 다르면 "후처리 통과 → 검증 실패" 발생
 - `rotateSynonyms` >6회 교체 ↔ `checkSynonymRotation` >6회 경고 (일치)
@@ -131,3 +203,33 @@ UI에서 RAG 배지 표시 (초록=적용, 회색=미적용)
 - 후처리 Step 1.7~1.9에서 문장 삭제 시 글자수 감소
 - 검증 checkCharCount가 2,000자 미만 에러 표시
 - 원인: LLM이 짧게 생성 + 후처리가 추가 삭제 → 프롬프트에서 글자수 목표 강화
+
+### 지역명 과다/부족
+- `enforceRegionFrequency` 목표 5~8회, 상한 8회
+- 부족 시: 본문 0~1회일 때만 브릿지 문장 삽입 (임상/정보성 톤 자동 분기)
+- 과다 시: 본문 후방에서 초과 라인 제거 (첫 3라인, 마지막 1라인 보호)
+
+---
+
+## v3.12.0 변경사항
+
+### 키워드 배치 완화 (F3)
+- 프롬프트: 형태소A/B 각 "정확히 7회" → "5~8회 범위 내 자연스럽게 분산"
+- `enforceMorphemeLimit`: 교체 트리거 >7회 → >9회
+- `enforceRegionFrequency`: 본문 브릿지 삽입 기준 <4회 → <2회
+- `checkKeywordFrequency`: 허용 범위 6~8회 → 4~9회
+
+### 복합 임상 케이스 지원 (F2)
+- `types/index.ts`: `ClinicalProcedure` 인터페이스 추가
+- `GenerateForm.tsx`: 임상 모드에 "단순 입력 / 복합 케이스" 토글 추가
+  - 복합 케이스: 시술 단계별 카드 UI (이름, 치식번호, 상세, 강조, 주시술 여부)
+- `route.ts`: procedures[] 존재 시 구조화된 CC 프롬프트 생성
+  - 주 치료 40%+ 본론 비중, 인과 연결어 사용, 독립 나열 금지
+
+### 소제목 커스텀 (F1)
+- `types/index.ts`: `SectionTemplate` 인터페이스 추가
+- `GenerateForm.tsx`: 아코디언형 소제목 편집 UI (프리셋 3종 + 자유 편집)
+- `route.ts`: customSections[] 존재 시 "반드시 이 제목 사용" 프롬프트 삽입
+
+### 크롭 버그 수정 (F4)
+- `ImageEditor.tsx`: applyCrop useCallback 의존성 배열에 bgRotation, bgFlipX, bgFlipY, clearPrivacyHistory 추가
