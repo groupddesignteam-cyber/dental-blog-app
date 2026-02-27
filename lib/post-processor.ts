@@ -2,6 +2,9 @@
  * LLM 출력 후처리 모듈
  * - 금칙어 자동 치환
  * - 의료법 위반 표현 자동 치환
+ * - Q&A/FAQ 위치 강제 (본문 중간 제거)
+ * - 상투적 공감 멘트 반복 제거
+ * - 비유 표현 과다 제한
  * - ~요 금지 어미 치환 (안전 패턴만)
  * - 형태소 기반 키워드 빈도 조절
  * - 동의어 회전 강제 적용
@@ -595,8 +598,22 @@ export function enforceRegionFrequency(content: string, region: string): string 
     if (/^##\s/.test(s)) headerCount++
   }
 
-  // 구조가 예상과 다르면(헤더가 너무 적으면) 단순 전체 삽입으로 fallback
-  if (headerCount < 2) return content
+  // 구조가 예상과 다르면(헤더가 너무 적으면) 단순 전체 카운트 기반 fallback
+  if (headerCount < 2) {
+    const currentCount = (content.match(new RegExp(escapeRegex(region), 'g')) || []).length
+    if (currentCount >= 5) return content // 이미 충분
+    // 부족 시 글 끝에 브릿지 문장 삽입
+    let result = content
+    const bridges = getBridgeSentences(region)
+    let bridgeIdx = 0
+    let needed = Math.max(0, 5 - currentCount)
+    while (needed > 0) {
+      result = result.trimEnd() + '\n\n' + bridges[bridgeIdx % bridges.length]
+      bridgeIdx++
+      needed--
+    }
+    return result
+  }
 
   // Conclusion은 마지막 헤더 + 내용
   const conclusionHeaderIdx = sections.length - 2
@@ -684,6 +701,254 @@ export function enforceRegionFrequency(content: string, region: string): string 
 }
 
 // ============================================================
+// 6. Q&A/FAQ 블록 위치 강제 (본문 중간 Q&A 제거)
+// ============================================================
+
+/**
+ * Q&A/FAQ 블록이 본문 중간에 등장하면 제거.
+ * - 임상 모드: Q&A 블록 전부 제거
+ * - 정보성 모드: 마지막 ## 섹션(결론)에만 1개 허용, 나머지 제거
+ *
+ * Q&A 블록 판별: "Q." 또는 "Q:" 으로 시작하는 줄 + 뒤따르는 "A." 또는 "A:" 줄
+ * 또는 "**Q.**" / "**Q:**" 마크다운 볼드 패턴
+ */
+function enforceQnaPosition(content: string, writingMode?: string): string {
+  // 2차 패스: 줄 내부 인라인 Q&A 패턴 ("Q. ~? A. ~") 을 줄 분리로 정규화
+  let normalized = content.replace(
+    /([^\n])((?:\*{0,2})Q[.:])\s*/gi,
+    (match, before, qMark) => {
+      // Q가 줄 시작이 아니면 앞에 줄바꿈 삽입
+      if (before.trim()) return before + '\n' + qMark + ' '
+      return match
+    }
+  )
+  normalized = normalized.replace(
+    /([^\n])((?:\*{0,2})A[.:])\s*/gi,
+    (match, before, aMark) => {
+      if (before.trim()) return before + '\n' + aMark + ' '
+      return match
+    }
+  )
+
+  const lines = normalized.split('\n')
+
+  // ## 헤더 위치 찾기
+  const headerIndices: number[] = []
+  for (let i = 0; i < lines.length; i++) {
+    if (/^##\s/.test(lines[i].trim())) {
+      headerIndices.push(i)
+    }
+  }
+
+  // 마지막 ## 섹션 시작 인덱스 (결론 영역)
+  const lastHeaderIdx = headerIndices.length > 0 ? headerIndices[headerIndices.length - 1] : lines.length
+
+  // Q&A 블록 감지 패턴
+  const QNA_START = /^\s*(?:\*{0,2}Q[.:\s])/i
+  const QNA_ANSWER = /^\s*(?:\*{0,2}A[.:\s])/i
+  // FAQ 헤더 패턴
+  const FAQ_HEADER = /^\s*(?:#{1,3}\s*)?(?:FAQ|Q\s*&\s*A|자주\s*묻는\s*질문|궁금하신)/i
+
+  // 임상 모드: 모든 Q&A 제거
+  if (writingMode === 'expert') {
+    const result: string[] = []
+    let skipQna = false
+
+    for (let i = 0; i < lines.length; i++) {
+      const trimmed = lines[i].trim()
+
+      if (FAQ_HEADER.test(trimmed)) {
+        skipQna = true
+        continue
+      }
+      if (QNA_START.test(trimmed)) {
+        skipQna = true
+        continue
+      }
+      if (skipQna && QNA_ANSWER.test(trimmed)) {
+        continue
+      }
+      if (skipQna && trimmed === '') {
+        skipQna = false
+        continue
+      }
+      // Q&A 답변이 여러 줄일 수 있음 — 빈 줄 or 새 헤더/Q가 올 때까지 스킵
+      if (skipQna && !QNA_START.test(trimmed) && !/^##\s/.test(trimmed)) {
+        continue
+      }
+
+      skipQna = false
+      result.push(lines[i])
+    }
+    return result.join('\n')
+  }
+
+  // 정보성 모드: 결론(마지막 ## 이후) 영역만 Q&A 1개 허용
+  const result: string[] = []
+  let qnaCountInConclusion = 0
+  let skipQna = false
+
+  for (let i = 0; i < lines.length; i++) {
+    const trimmed = lines[i].trim()
+    const isInConclusion = i >= lastHeaderIdx
+
+    if (FAQ_HEADER.test(trimmed) || QNA_START.test(trimmed)) {
+      if (!isInConclusion) {
+        // 본문 중간 Q&A → 제거
+        skipQna = true
+        continue
+      }
+      if (isInConclusion && qnaCountInConclusion >= 1) {
+        // 결론에서 2번째 이상 Q&A → 제거
+        skipQna = true
+        continue
+      }
+      // 결론 첫 번째 Q&A → 허용
+      if (QNA_START.test(trimmed)) {
+        qnaCountInConclusion++
+      }
+      skipQna = false
+      result.push(lines[i])
+      continue
+    }
+
+    if (skipQna) {
+      if (QNA_ANSWER.test(trimmed)) continue
+      if (trimmed === '') { skipQna = false; continue }
+      if (!/^##\s/.test(trimmed)) continue
+      skipQna = false
+    }
+
+    result.push(lines[i])
+  }
+
+  return result.join('\n')
+}
+
+// ============================================================
+// 7. 상투적 공감 멘트 반복 제거
+// ============================================================
+
+/** 기계적으로 반복되는 상투적 공감/전환 멘트 패턴 */
+const BOILERPLATE_PATTERNS: RegExp[] = [
+  /충분히\s*(?:그러실|이해하실|공감하실|그렇게\s*느끼실)\s*수\s*있습니다/g,
+  /충분히\s*(?:관리하실|회복하실|극복하실|나아지실|좋아지실|개선되실)\s*수\s*있습니다/g,
+  /자주\s*(?:나오는|받는|듣는|묻는)\s*질문입니다/g,
+  /많이들?\s*(?:궁금해\s*하시는|여쭤보시는|문의하시는)\s*(?:부분|내용)인데요/g,
+  /알아보기\s*쉽습니다/g,
+  /쉽게\s*(?:말씀드리|설명드리|풀어보)면/g,
+]
+
+/**
+ * 상투적 멘트가 글 전체에서 2회 이상 등장하면 2번째부터 해당 문장 제거.
+ * 문장 단위로 제거하되, 빈 줄이 연속되지 않도록 정리.
+ */
+function removeBoilerplatePhrases(content: string): string {
+  let result = content
+
+  for (const pattern of BOILERPLATE_PATTERNS) {
+    // 전역 플래그 재설정
+    const globalPattern = new RegExp(pattern.source, 'g')
+    const matches = [...result.matchAll(globalPattern)]
+
+    if (matches.length < 2) continue
+
+    // 2번째부터 해당 문장을 포함한 줄 제거 (뒤에서부터)
+    const toRemove = matches.slice(1)
+    for (let i = toRemove.length - 1; i >= 0; i--) {
+      const match = toRemove[i]
+      if (match.index === undefined) continue
+
+      // 해당 매치가 포함된 문장(줄) 찾기
+      const beforeMatch = result.slice(0, match.index)
+      const lastNewline = beforeMatch.lastIndexOf('\n')
+      const lineStart = lastNewline + 1
+      const afterMatch = result.slice(match.index)
+      const nextNewline = afterMatch.indexOf('\n')
+      const lineEnd = nextNewline === -1 ? result.length : match.index + nextNewline
+
+      // 줄 전체 제거
+      result = result.slice(0, lineStart) + result.slice(lineEnd + 1)
+    }
+  }
+
+  // 빈 줄 3개 이상 연속 → 2개로 정리
+  result = result.replace(/\n{3,}/g, '\n\n')
+
+  return result
+}
+
+// ============================================================
+// 8. 비유 표현 과다 사용 제한 (정보성 모드)
+// ============================================================
+
+/** 비유 표현 감지 패턴 */
+const METAPHOR_PATTERNS: RegExp[] = [
+  /마치\s+[가-힣]+(?:처럼|과\s*같|와\s*같|듯이|듯\s)/g,
+  /비유하자면/g,
+  /비유하면/g,
+  /비유해\s*보면/g,
+  /쉽게\s*비유하자면/g,
+  /와\s*같은\s*원리/g,
+  /과\s*같은\s*원리/g,
+  /에\s*비유하면/g,
+  /라고\s*생각하시면\s*(?:이해하기\s*)?쉽/g,
+  /으로\s*비유하면/g,
+]
+
+/**
+ * 정보성 모드에서 비유 표현이 2회를 초과하면 3번째부터 제거.
+ * 비유 표현이 포함된 문장에서 비유 부분만 삭제하되, 문장이 비유 중심이면 줄 전체 삭제.
+ */
+function limitMetaphors(content: string, writingMode?: string): string {
+  // 임상 모드에서는 비유 자체가 금지이므로 모든 비유 제거
+  // 정보성 모드에서는 2회까지 허용
+  const maxAllowed = writingMode === 'expert' ? 0 : 2
+
+  // 모든 비유 매치를 수집하고 위치순 정렬
+  const allMatches: { index: number; length: number; text: string }[] = []
+
+  for (const pattern of METAPHOR_PATTERNS) {
+    const globalPattern = new RegExp(pattern.source, 'g')
+    for (const match of content.matchAll(globalPattern)) {
+      if (match.index !== undefined) {
+        allMatches.push({ index: match.index, length: match[0].length, text: match[0] })
+      }
+    }
+  }
+
+  // 위치순 정렬 (앞→뒤)
+  allMatches.sort((a, b) => a.index - b.index)
+
+  // 중복 제거 (겹치는 매치)
+  const dedupedMatches: typeof allMatches = []
+  for (const m of allMatches) {
+    const last = dedupedMatches[dedupedMatches.length - 1]
+    if (last && m.index < last.index + last.length) continue
+    dedupedMatches.push(m)
+  }
+
+  if (dedupedMatches.length <= maxAllowed) return content
+
+  // maxAllowed+1번째부터 해당 비유 부분 삭제 (뒤에서부터)
+  let result = content
+  const toRemove = dedupedMatches.slice(maxAllowed)
+
+  for (let i = toRemove.length - 1; i >= 0; i--) {
+    const match = toRemove[i]
+    // 비유 표현만 삭제 (문장은 유지, 인덱스 안전을 위해 trim 없이 직접 치환)
+    result = result.slice(0, match.index) + result.slice(match.index + match.length)
+  }
+
+  // 삭제 후 정리 (한꺼번에 처리하여 인덱스 밀림 방지)
+  result = result.replace(/\n{3,}/g, '\n\n')
+  result = result.replace(/  +/g, ' ')
+  result = result.replace(/\s+([.!?,])/g, '$1') // 구두점 앞 불필요 공백
+
+  return result
+}
+
+// ============================================================
 // 강조부사 빈도 제한
 // ============================================================
 
@@ -751,6 +1016,15 @@ export function postProcess(content: string, options: PostProcessOptions): strin
 
   // Step 1.5: 의료법 위반 표현 자동 치환
   result = sanitizeMedicalExpressions(result)
+
+  // Step 1.7: Q&A/FAQ 위치 강제 (본문 중간 제거)
+  result = enforceQnaPosition(result, options.writingMode)
+
+  // Step 1.8: 상투적 공감 멘트 반복 제거
+  result = removeBoilerplatePhrases(result)
+
+  // Step 1.9: 비유 표현 과다 제한
+  result = limitMetaphors(result, options.writingMode)
 
   // Step 2: ~요 금지 어미 치환 (안전 패턴만)
   result = sanitizeForbiddenEndings(result, options.writingMode)

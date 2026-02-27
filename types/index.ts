@@ -200,4 +200,10 @@ export interface GenerateResult {
   imageFileNames?: string[]
   warnings?: string[] // 의료법 위반, 글자수 경고 등
   references?: PaperCitation[] // 논문 인용 목록
+  ragInfo?: {
+    personaApplied: boolean
+    personaPostCount: number
+    personaAvgLength: number
+    ragAvailable: boolean
+  }
 }

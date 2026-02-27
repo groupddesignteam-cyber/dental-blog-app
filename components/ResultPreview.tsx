@@ -166,9 +166,22 @@ export default function ResultPreview({ result, isStreaming, streamContent, clin
             {isStreaming ? '🔄 생성 중...' : '✅ 생성 완료'}
           </h3>
           {result && (
-            <span className="text-sm text-gray-500">
-              {result.charCount.toLocaleString()}자
-            </span>
+            <div className="flex items-center gap-3">
+              {result.ragInfo && (
+                <span className={`text-xs px-2 py-0.5 rounded-full ${
+                  result.ragInfo.personaApplied
+                    ? 'bg-green-100 text-green-700'
+                    : 'bg-gray-100 text-gray-500'
+                }`}>
+                  {result.ragInfo.personaApplied
+                    ? `RAG ${result.ragInfo.personaPostCount}건 참조`
+                    : 'RAG 미적용'}
+                </span>
+              )}
+              <span className="text-sm text-gray-500">
+                {result.charCount.toLocaleString()}자
+              </span>
+            </div>
           )}
         </div>
 

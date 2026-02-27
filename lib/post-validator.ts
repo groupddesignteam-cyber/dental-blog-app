@@ -166,13 +166,20 @@ function checkKeywordFrequency(
 
   // 형태소A (region) 카운트: 목표 7, 허용 6~8
   if (region) {
-    const regionCount = (cleanContent.match(new RegExp(escapeRegex(region), 'g')) || []).length
+    const regionTotal = (cleanContent.match(new RegExp(escapeRegex(region), 'g')) || []).length
+    // 치과명 내부에 포함된 region 횟수 차감 (예: "부평좋은치과" 안의 "부평")
+    let regionClinicOverlap = 0
+    if (clinicName && clinicName.includes(region) && clinicName !== region) {
+      regionClinicOverlap = (cleanContent.match(new RegExp(escapeRegex(clinicName), 'g')) || []).length
+    }
+    const regionCount = regionTotal - regionClinicOverlap
+
     if (regionCount > 8) {
-      issues.push(`"${region}" ${regionCount}회 (형태소A 목표 7, 최대 8 초과)`)
+      issues.push(`"${region}" ${regionCount}회 (형태소A 목표 7, 최대 8 초과)${regionClinicOverlap ? ` [치과명 내 ${regionClinicOverlap}회 제외]` : ''}`)
     } else if (regionCount < 6) {
-      issues.push(`"${region}" ${regionCount}회 (형태소A 목표 7, 최소 6 미달)`)
+      issues.push(`"${region}" ${regionCount}회 (형태소A 목표 7, 최소 6 미달)${regionClinicOverlap ? ` [치과명 내 ${regionClinicOverlap}회 제외]` : ''}`)
     } else {
-      info.push(`"${region}" ${regionCount}회 (형태소A)`)
+      info.push(`"${region}" ${regionCount}회 (형태소A)${regionClinicOverlap ? ` [치과명 내 ${regionClinicOverlap}회 제외]` : ''}`)
     }
   }
 
@@ -446,9 +453,9 @@ function checkSynonymRotation(content: string, mainKeyword?: string, region?: st
       }
     }
 
-    // 전체 글에서 7회 이상이면 경고
-    if (totalCount >= 6) {
-      issues.push(`"${word}" 전체 ${totalCount}회 (동의어 교체 필수! 최대 5회 이하 권장)`)
+    // 전체 글에서 7회 이상이면 경고 (프롬프트 규칙: 글 전체 6회 이하)
+    if (totalCount > 6) {
+      issues.push(`"${word}" 전체 ${totalCount}회 (동의어 교체 필수! 최대 6회 이하 권장)`)
     }
   }
 
@@ -554,6 +561,93 @@ function checkCitations(content: string, citePapers?: boolean): ValidationCheck 
   }
 }
 
+// ── 12. Q&A 위치 검증 ──
+function checkQnaPosition(content: string, writingMode: string): ValidationCheck {
+  const lines = content.split('\n')
+  const QNA_LINE = /^\s*(?:\*{0,2}Q[.:\s])/i
+  const FAQ_LINE = /^\s*(?:#{1,3}\s*)?(?:FAQ|Q\s*&\s*A|자주\s*묻는\s*질문)/i
+
+  // ## 헤더 위치
+  const headerIndices: number[] = []
+  for (let i = 0; i < lines.length; i++) {
+    if (/^##\s/.test(lines[i].trim())) headerIndices.push(i)
+  }
+  const lastHeaderIdx = headerIndices.length > 0 ? headerIndices[headerIndices.length - 1] : lines.length
+
+  let bodyQna = 0
+  let conclusionQna = 0
+  for (let i = 0; i < lines.length; i++) {
+    const trimmed = lines[i].trim()
+    if (QNA_LINE.test(trimmed) || FAQ_LINE.test(trimmed)) {
+      if (i < lastHeaderIdx) bodyQna++
+      else conclusionQna++
+    }
+  }
+
+  if (writingMode === 'expert') {
+    const total = bodyQna + conclusionQna
+    const passed = total === 0
+    return {
+      name: 'Q&A 위치',
+      passed,
+      severity: passed ? 'info' : 'warning',
+      message: passed ? 'Q&A 없음 (임상 모드 적정)' : `임상 모드에 Q&A ${total}건 잔존`,
+    }
+  }
+
+  const passed = bodyQna === 0 && conclusionQna <= 1
+  return {
+    name: 'Q&A 위치',
+    passed,
+    severity: passed ? 'info' : 'warning',
+    message: passed
+      ? `Q&A 결론 ${conclusionQna}건 (적정)`
+      : `본문 Q&A ${bodyQna}건 / 결론 ${conclusionQna}건 (본문 0, 결론 1 이하 권장)`,
+  }
+}
+
+// ── 13. 비유 과다 검증 ──
+function checkMetaphorCount(content: string, writingMode: string): ValidationCheck {
+  const METAPHOR_RE = [
+    /마치\s+[가-힣]+(?:처럼|과\s*같|와\s*같|듯이|듯\s)/g,
+    /비유하자면/g, /비유하면/g, /비유해\s*보면/g, /쉽게\s*비유하자면/g,
+    /와\s*같은\s*원리/g, /과\s*같은\s*원리/g,
+    /라고\s*생각하시면\s*(?:이해하기\s*)?쉽/g,
+  ]
+  let count = 0
+  for (const re of METAPHOR_RE) {
+    const matches = content.match(new RegExp(re.source, 'g'))
+    if (matches) count += matches.length
+  }
+
+  const max = writingMode === 'expert' ? 0 : 2
+  const passed = count <= max
+  return {
+    name: '비유 횟수',
+    passed,
+    severity: passed ? 'info' : 'warning',
+    message: passed
+      ? `비유 ${count}회 (${writingMode === 'expert' ? '임상 0 이하' : '정보성 2 이하'} 적정)`
+      : `비유 ${count}회 (최대 ${max}회 초과)`,
+  }
+}
+
+// ── 14. 번호 목록 감지 (정보성 모드) ──
+function checkNumberedList(content: string, writingMode: string): ValidationCheck {
+  if (writingMode === 'expert') {
+    return { name: '번호 목록', passed: true, severity: 'info', message: '임상 모드 (검사 생략)' }
+  }
+  const numberedSteps = content.match(/\n\s*(?:\d+[단계).])\s*[:：]/g)
+  const count = numberedSteps ? numberedSteps.length : 0
+  const passed = count < 3
+  return {
+    name: '번호 목록',
+    passed,
+    severity: passed ? 'info' : 'warning',
+    message: passed ? `번호 목록 ${count}건 (적정)` : `번호 목록 ${count}건 (이야기식 서술 권장)`,
+  }
+}
+
 // ── 전체 검증 실행 ──
 export function validatePost(
   content: string,
@@ -578,6 +672,9 @@ export function validatePost(
     checkEndingVariety(content, options.writingMode || 'expert'),
     checkAIPatterns(content),
     checkCitations(content, options.citePapers),
+    checkQnaPosition(content, options.writingMode || 'expert'),
+    checkMetaphorCount(content, options.writingMode || 'expert'),
+    checkNumberedList(content, options.writingMode || 'expert'),
   ]
 
   // 항목별 가중치 차등 적용
@@ -593,6 +690,9 @@ export function validatePost(
     '어미 다양성': { error: 5, warning: 3 },
     'AI 패턴': { error: 8, warning: 5 },
     '논문 인용': { error: 5, warning: 3 },
+    'Q&A 위치': { error: 8, warning: 5 },
+    '비유 횟수': { error: 8, warning: 5 },
+    '번호 목록': { error: 5, warning: 3 },
   }
 
   let deduction = 0

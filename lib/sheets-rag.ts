@@ -553,16 +553,29 @@ export async function extractClinicPersona(
   const posts = await findClinicTopicPosts(clinicName, topic, sheetId)
 
   if (posts.length === 0) {
+    console.log(`[Persona] ${clinicName} - "${topic}": 매칭 글 0건`)
     return null
   }
 
-  // 모든 글 내용 합치기 (분석용) - 전체 글 참조
-  const allContent = posts.map(p => p.content).join('\n\n')
+  // 주제 관련도가 높은 글 우선, 나머지는 스타일 보조
+  // score > 0.6 = 주제까지 매칭된 글, 0.5 = 치과명만 매칭
+  const topicMatchedPosts = posts.filter(p => p.score > 0.6)
+  const stylePosts = topicMatchedPosts.length >= 3 ? topicMatchedPosts : posts.slice(0, 10)
+  console.log(`[Persona] ${clinicName} - "${topic}": 전체 ${posts.length}건, 주제매칭 ${topicMatchedPosts.length}건, 스타일분석 ${stylePosts.length}건`)
+  const allContent = stylePosts.map(p => p.content).join('\n\n')
 
   // 스타일 분석
+  const rawEndings = extractEndings(allContent)
+
+  // 금지 어미를 colloquial에서 필터 (LLM이 패턴으로 인식하는 것 방지)
+  const FORBIDDEN_ENDING_LABELS = ['~해요', '~거든요', '~드려요', '~있어요', '~할게요', '~볼게요']
+  rawEndings.colloquial = rawEndings.colloquial.filter(
+    label => !FORBIDDEN_ENDING_LABELS.includes(label)
+  )
+
   const writingStyle = {
     tone: analyzeTone(allContent),
-    endings: extractEndings(allContent),
+    endings: rawEndings,
     greetings: extractGreetings(allContent),
     closings: extractClosings(allContent),
     expressions: extractExpressions(allContent).transitions.slice(0, 5),
