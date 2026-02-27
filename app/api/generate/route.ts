@@ -1108,8 +1108,8 @@ ${ragContext}
 
 ${(data.topic && !mainKeyword.includes(data.topic)) ? `### 치료 서브키워드: "${data.topic}"
 - 형태소B와 별도로 3~5회 자연스럽게 배치 (초반200자, 중간, 마지막200자 포함)` : `### 치료 키워드: "${data.topic}"
-- ⚠️ 형태소B와 동일한 단어! 위 형태소B 7회 규칙이 곧 "${data.topic}" 배치 규칙입니다.
-- "${data.topic}"을 추가로 단독 반복하지 마세요 — 형태소B 7회에 이미 포함됨!`}
+- ⚠️ 형태소B와 동일한 단어! 위 형태소B 5~8회 규칙이 곧 "${data.topic}" 배치 규칙입니다.
+- "${data.topic}"을 추가로 단독 반복하지 마세요 — 형태소B 5~8회에 이미 포함됨!`}
 - 서브 키워드: ${keywordsToUse.join(', ')} (각 2회)
 ${selectedKeywords && selectedKeywords.length > 0 ? `- ⭐ 사용자 선택 키워드 (우선 반영): ${selectedKeywords.join(', ')}` : ''}
 
@@ -1193,7 +1193,8 @@ ${data.customSections && data.customSections.length > 0 ? `### 📋 본론 구�
 ${data.customSections.map((s, i) => `섹션 ${i + 1}: ## ${s.title}${s.description ? `\n  - ${s.description}` : ''}`).join('\n')}
 
 ⚠️ 위 소제목을 정확히 그대로 사용하세요. 변형/추가 금지.
-각 섹션에 400자 이상 작성하세요.` : ''}
+각 섹션에 400자 이상 작성하세요.${data.procedures && data.procedures.length > 0 ? `
+※ 복합 케이스와 함께 사용 중입니다. 위 소제목 구조 안에서 복합 케이스 서술 규칙(주 치료 40%+, 인과 연결어, 치료 여정 서술)을 적용하세요.` : ''}` : ''}
 
 ### 🚨 형태소 배치 확인 (자가 검증 — 반드시 수행!)
 글 작성 완료 후, 아래 체크리스트를 하나씩 확인하세요:

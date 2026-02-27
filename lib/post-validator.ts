@@ -648,6 +648,33 @@ function checkNumberedList(content: string, writingMode: string): ValidationChec
   }
 }
 
+// ── 소제목 커스텀 검증 ──
+function checkCustomSections(content: string, customSections?: { title: string; description?: string }[]): ValidationCheck {
+  if (!customSections || customSections.length === 0) {
+    return { name: '소제목 커스텀', passed: true, severity: 'info', message: '소제목 미지정 (자동 생성)' }
+  }
+
+  const missing: string[] = []
+  for (const section of customSections) {
+    if (!section.title) continue
+    const titleRegex = new RegExp(`^##\\s+.*${escapeRegex(section.title)}`, 'm')
+    if (!titleRegex.test(content)) {
+      missing.push(section.title)
+    }
+  }
+
+  const passed = missing.length === 0
+  return {
+    name: '소제목 커스텀',
+    passed,
+    severity: passed ? 'info' : 'warning',
+    message: passed
+      ? `지정 소제목 ${customSections.length}개 모두 반영됨`
+      : `미반영 소제목 ${missing.length}건`,
+    details: missing.length > 0 ? missing.map(t => `"${t}" 미사용`) : undefined,
+  }
+}
+
 // ── 전체 검증 실행 ──
 export function validatePost(
   content: string,
@@ -658,6 +685,7 @@ export function validatePost(
     mainKeyword?: string
     region?: string
     citePapers?: boolean
+    customSections?: { title: string; description?: string }[]
   } = {}
 ): ValidationResult {
   const checks: ValidationCheck[] = [
@@ -675,6 +703,7 @@ export function validatePost(
     checkQnaPosition(content, options.writingMode || 'expert'),
     checkMetaphorCount(content, options.writingMode || 'expert'),
     checkNumberedList(content, options.writingMode || 'expert'),
+    checkCustomSections(content, options.customSections),
   ]
 
   // 항목별 가중치 차등 적용
@@ -693,6 +722,7 @@ export function validatePost(
     'Q&A 위치': { error: 8, warning: 5 },
     '비유 횟수': { error: 8, warning: 5 },
     '번호 목록': { error: 5, warning: 3 },
+    '소제목 커스텀': { error: 5, warning: 3 },
   }
 
   let deduction = 0

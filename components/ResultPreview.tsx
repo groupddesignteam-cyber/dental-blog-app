@@ -15,6 +15,7 @@ interface Props {
   topic?: string
   writingMode?: string
   mainKeyword?: string
+  customSections?: { title: string; description?: string }[]
 }
 
 // 검증 결과 패널 컴포넌트
@@ -98,7 +99,7 @@ function CheckItem({ check }: { check: ValidationCheck }) {
   )
 }
 
-export default function ResultPreview({ result, isStreaming, streamContent, clinicName, region, topic, writingMode, mainKeyword }: Props) {
+export default function ResultPreview({ result, isStreaming, streamContent, clinicName, region, topic, writingMode, mainKeyword, customSections }: Props) {
   const [copied, setCopied] = useState(false)
   const [activeTab, setActiveTab] = useState<'preview' | 'markdown' | 'html' | 'naver'>('preview')
 
@@ -114,8 +115,9 @@ export default function ResultPreview({ result, isStreaming, streamContent, clin
       mainKeyword: mainKeyword || result.keywords?.main || '',
       region: region || '',
       citePapers: !!(result.references && result.references.length > 0),
+      customSections,
     })
-  }, [result, clinicName, region, topic, writingMode, mainKeyword])
+  }, [result, clinicName, region, topic, writingMode, mainKeyword, customSections])
 
   const handleCopy = async (text: string) => {
     await navigator.clipboard.writeText(text)

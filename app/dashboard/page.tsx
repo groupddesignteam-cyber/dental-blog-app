@@ -303,6 +303,7 @@ export default function DashboardPage() {
                 topic={lastFormData?.topic}
                 writingMode={lastFormData?.writingMode}
                 mainKeyword={lastFormData?.mainKeyword}
+                customSections={lastFormData?.customSections}
               />
             </div>
           </div>

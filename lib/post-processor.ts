@@ -412,10 +412,10 @@ function reduceWordCount(
  * 형태소 기반 키워드 빈도 제한
  *
  * 메인키워드 = 형태소A(region) + 형태소B(치과 or topic)
- * 각 형태소 목표 7회 → 8회 초과 시 축소
+ * 각 형태소 목표 5~8회 범위, 9회 초과 시 축소
  *
  * - "지역+치과" 타입: morphemeB = "치과", topic은 서브키워드(별도 max 5)
- * - "지역+진료" 타입: morphemeB = topic, topic은 이미 7회에 포함
+ * - "지역+진료" 타입: morphemeB = topic, topic은 이미 5~8회에 포함
  */
 export function enforceMorphemeLimit(
   content: string,
@@ -576,7 +576,7 @@ export function rotateSynonyms(content: string, options: PostProcessOptions): st
 }
 
 // ============================================================
-// 5. 형태소(지역명) 빈도 및 분포 보장 (7회 고정: 제목1+서론1+본론4+결론1)
+// 5. 형태소(지역명) 빈도 및 분포 보장 (5~8회 범위: 자연 분산)
 // ============================================================
 
 /** 본론용 브릿지 문장 (다양성 확보) */
@@ -610,9 +610,9 @@ function getBridgeSentences(region: string, writingMode?: string): string[] {
 }
 
 /**
- * 지역명 빈도 및 분포 강제 (총 7회)
- * - 제목(1), 서론(1), 본론(4), 결론(1)
- * - 부족 시 브릿지 문장 삽입
+ * 지역명 빈도 및 분포 강제 (5~8회 범위)
+ * - 제목(1), 서론(1), 본론(자연 분산), 결론(1)
+ * - 2회 미만 시에만 브릿지 문장 삽입, 9회 초과 시 뒤에서부터 제거
  */
 export function enforceRegionFrequency(content: string, region: string, writingMode?: string): string {
   if (!region) return content
@@ -724,11 +724,11 @@ export function enforceRegionFrequency(content: string, region: string, writingM
   // 재조립시 introPart 업데이트
   sections[0] = introPart
 
-  // 3. Cap 로직: 총 region 수가 8회 초과 시 본론 뒤쪽부터 제거
+  // 3. Cap 로직: 총 region 수가 9회 초과 시 본론 뒤쪽부터 제거 (5~8회 범위 허용)
   let assembled = sections.join('')
   const totalRegionCount = (assembled.match(new RegExp(escapeRegex(region), 'g')) || []).length
 
-  if (totalRegionCount > 8) {
+  if (totalRegionCount > 9) {
     // 뒤에서부터 본론 영역의 region 멘션을 포함한 문장을 제거
     const regionRegex = new RegExp(escapeRegex(region), 'g')
     const allPositions: number[] = []
@@ -738,7 +738,7 @@ export function enforceRegionFrequency(content: string, region: string, writingM
     }
 
     // 앞 3개(제목+서론+본론초반)와 뒤 1개(결론)는 보호, 나머지 뒤에서부터 제거
-    const excess = totalRegionCount - 7
+    const excess = totalRegionCount - 8
     // 제거 대상: 보호 3개 이후 ~ 결론 1개 이전
     const removable = allPositions.slice(3, -1)
     const toRemovePositions = removable.slice(-excess) // 뒤쪽 excess개
@@ -1122,7 +1122,7 @@ export function postProcess(content: string, options: PostProcessOptions): strin
   // Step 4.5: 강조부사 빈도 제한 (각 2회 이하)
   result = limitEmphasisAdverbs(result)
 
-  // Step 5: 형태소(지역명) 빈도 및 분포 보장 (7회 고정)
+  // Step 5: 형태소(지역명) 빈도 및 분포 보장 (5~8회 범위)
   if (options.region) {
     result = enforceRegionFrequency(result, options.region, options.writingMode)
   }
