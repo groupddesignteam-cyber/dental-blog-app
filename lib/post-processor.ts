@@ -82,12 +82,12 @@ const CONTEXT_REPLACEMENTS: [RegExp, string][] = [
   [/힘들다/g, '어렵다'],
   [/힘든/g, '어려운'],
   [/힘들(?=[,.\s!?\n]|$)/g, '어려운'],
-  // 고민- 활용형
+  // 고민- 활용형 ("고충이 되다"는 비문 → "염려"로 통일)
   [/고민거리/g, '궁금증'],
-  [/고민이/g, '고충이'],
-  [/고민을/g, '고충을'],
+  [/고민이/g, '염려가'],
+  [/고민을/g, '염려를'],
   [/고민하/g, '숙고하'],
-  [/고민(?=[,.\s!?\n]|$)/g, '숙고'],
+  [/고민(?=[,.\s!?\n]|$)/g, '염려'],
   // 감사합니다 제거 (마무리 인사 뒤)
   [/이었습니다\.\s*감사합니다\.?/g, '이었습니다.'],
   [/였습니다\.\s*감사합니다\.?/g, '였습니다.'],
@@ -534,7 +534,16 @@ export function rotateSynonyms(content: string, options: PostProcessOptions): st
 
         const before = result.slice(0, match.index)
         const after = result.slice(match.index + word.length)
-        result = before + synonym + after
+
+        // 조사 보정: 뒤에 조사가 붙어있으면 받침에 맞게 교체
+        const particleMatch = after.match(PARTICLE_PATTERN)
+        if (particleMatch) {
+          const oldParticle = particleMatch[1]
+          const newParticle = adjustParticle(synonym, oldParticle)
+          result = before + synonym + newParticle + after.substring(oldParticle.length)
+        } else {
+          result = before + synonym + after
+        }
       }
 
       // 주의: result가 변경되었으므로 다음 루프의 protectedRanges는 오차 발생 가능?
