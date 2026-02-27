@@ -234,6 +234,7 @@ export default function DashboardPage() {
             }`}
           >
             단일 생성
+            <span className="ml-1.5 px-1.5 py-0.5 text-[10px] font-bold bg-red-500 text-white rounded-full leading-none">NEW</span>
           </button>
           <button
             type="button"

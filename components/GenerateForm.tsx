@@ -495,6 +495,18 @@ export default function GenerateForm({ onSubmit, isLoading }: Props) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
+      {/* v3.12.0 새 기능 안내 */}
+      <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 flex items-start gap-3">
+        <span className="text-lg mt-0.5">✨</span>
+        <div className="text-sm text-blue-800">
+          <p className="font-semibold mb-1">v3.12.0 새 기능</p>
+          <ul className="list-disc list-inside space-y-0.5 text-blue-700">
+            <li><b>복합 케이스</b> — 임상 모드에서 시술 단계별 구조화 입력 (CC 영역)</li>
+            <li><b>소제목 커스텀</b> — 생성 전 H2 소제목을 미리 지정 가능</li>
+          </ul>
+        </div>
+      </div>
+
       {/* AI 모델 선택 */}
       <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">🤖 AI 모델 선택</h3>
