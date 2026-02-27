@@ -332,6 +332,7 @@ const PROTECTED_COMPOUNDS = [
   '보철치료', '레이저치료', '불소치료', '잇몸치료', '예방치료',
   '응급치료', '보존적치료', '재신경치료',
   '인공치아', '자연치아', '임시치아', '영구치아',
+  '보철물', '수복물', '골이식재', '상악동막', '발치와',
 ]
 
 /** 특정 단어의 출현 위치 중 복합어에 속하지 않는 안전한 위치만 반환 */
@@ -504,9 +505,16 @@ export function rotateSynonyms(content: string, options: PostProcessOptions): st
     const allMatches = [...result.matchAll(regex)]
 
     // 보호 구간과 겹치지 않는 유효 매치 필터링
-    const validMatches = allMatches.filter(m =>
-      m.index !== undefined && !isProtected(m.index, m.index + word.length)
-    )
+    // + 복합어 내부 매칭 방지: "보철"이 "보철물" 내부에서 매칭되면 스킵
+    const COMPOUND_SUFFIXES = /^[물술치재법학과막]/  // 복합어 결합 접미사
+    const validMatches = allMatches.filter(m => {
+      if (m.index === undefined) return false
+      if (isProtected(m.index, m.index + word.length)) return false
+      // 뒤에 복합어 접미사가 바로 이어지면 복합어 내부 → 스킵
+      const nextChar = result[m.index + word.length]
+      if (nextChar && COMPOUND_SUFFIXES.test(nextChar)) return false
+      return true
+    })
 
     // 6회 초과 시 교체
     if (validMatches.length > 6) {
@@ -563,7 +571,19 @@ export function rotateSynonyms(content: string, options: PostProcessOptions): st
 // ============================================================
 
 /** 본론용 브릿지 문장 (다양성 확보) */
-function getBridgeSentences(region: string): string[] {
+function getBridgeSentences(region: string, writingMode?: string): string[] {
+  // 임상 모드: 전문의 톤에 맞는 브릿지 문장
+  if (writingMode === 'expert') {
+    return [
+      `${region}에서도 이와 유사한 증례가 보고되고 있습니다.`,
+      `${region}에서도 이러한 소견으로 내원하시는 분들이 적지 않습니다.`,
+      `${region} 전문의와 정밀 검사를 통해 확인하시는 것이 권장됩니다.`,
+      `${region}에서도 유사한 임상 양상이 관찰됩니다.`,
+      `${region} 치과에서 정기적인 경과 관찰이 권장됩니다.`,
+      `${region}에서도 이러한 증상에 대한 진료 사례가 증가하고 있습니다.`,
+    ]
+  }
+  // 정보성 모드: 일반 안내 톤
   return [
     `${region} 방문 시 이 점을 확인해보시는 것이 좋습니다.`,
     `${region}에서 꾸준한 검진을 받으시길 권장합니다.`,
@@ -585,7 +605,7 @@ function getBridgeSentences(region: string): string[] {
  * - 제목(1), 서론(1), 본론(4), 결론(1)
  * - 부족 시 브릿지 문장 삽입
  */
-export function enforceRegionFrequency(content: string, region: string): string {
+export function enforceRegionFrequency(content: string, region: string, writingMode?: string): string {
   if (!region) return content
 
   // 1. 섹션 분리
@@ -604,7 +624,7 @@ export function enforceRegionFrequency(content: string, region: string): string 
     if (currentCount >= 5) return content // 이미 충분
     // 부족 시 글 끝에 브릿지 문장 삽입
     let result = content
-    const bridges = getBridgeSentences(region)
+    const bridges = getBridgeSentences(region, writingMode)
     let bridgeIdx = 0
     let needed = Math.max(0, 5 - currentCount)
     while (needed > 0) {
@@ -648,7 +668,7 @@ export function enforceRegionFrequency(content: string, region: string): string 
 
   if (currentBodyCount < 4) {
     let deficiency = 4 - currentBodyCount
-    const bridges = getBridgeSentences(region)
+    const bridges = getBridgeSentences(region, writingMode)
     let bridgeIdx = 0
 
     // 본론 섹션 순회하며 삽입
@@ -1053,6 +1073,20 @@ export function postProcess(content: string, options: PostProcessOptions): strin
   // Step 1.5: 의료법 위반 표현 자동 치환
   result = sanitizeMedicalExpressions(result)
 
+  // Step 1.6: 💡 핵심 문장에서 치과명/지역+치과 + 효과 연결 제거 (의료법)
+  if (options.region || options.clinicName) {
+    result = result.replace(/💡\s*핵심:.*$/gm, (line) => {
+      let cleaned = line
+      if (options.clinicName) {
+        cleaned = cleaned.replace(new RegExp(escapeRegex(options.clinicName) + '\\s*(?:에서|의)\\s*', 'g'), '')
+      }
+      if (options.region) {
+        cleaned = cleaned.replace(new RegExp(escapeRegex(options.region) + '\\s*(?:치과에서|에서)\\s*(?:진행하는|시행하는|실시하는)\\s*', 'g'), '')
+      }
+      return cleaned
+    })
+  }
+
   // Step 1.7: Q&A/FAQ 위치 강제 (본문 중간 제거)
   result = enforceQnaPosition(result, options.writingMode)
 
@@ -1081,7 +1115,7 @@ export function postProcess(content: string, options: PostProcessOptions): strin
 
   // Step 5: 형태소(지역명) 빈도 및 분포 보장 (7회 고정)
   if (options.region) {
-    result = enforceRegionFrequency(result, options.region)
+    result = enforceRegionFrequency(result, options.region, options.writingMode)
   }
 
   // Step 6: 문장 종결 후 줄바꿈 보장 ('~다.' 뒤 다음 문장은 새 줄)
